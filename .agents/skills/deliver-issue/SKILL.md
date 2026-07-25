@@ -1,27 +1,31 @@
 ---
 name: deliver-issue
-description: GitHub Issueを、調査、実装、コミット・Pull Request作成の3段階に分け、独立したagent間で引き継いで完了させる。lite-voteでIssueへの着手、Issueの実装、PR作成、または「explore→implement→commit&pr」の進行を依頼されたときに使用する。
+description: 実装計画が記録済みのGitHub Issueを、subagentによる実装・レビューと、親agentによるコミット・Pull Request作成に分けて完了させる。lite-voteで準備済みIssueの実装、PR作成、または「implement→review→commit&pr」の進行を依頼されたときに使用する。Issueの要件整理や設計が必要な場合はprepare-issueを使用する。
 ---
 
 # Deliver Issue
 
-対象Issueを読み、次の3段階を別々のagentへ順番に委譲する。各agentには対象Issue、関連文書、直前段階の成果だけを渡す。複数段階を同じagentに兼任させない。
+対象Issueに記録された実装計画を読み、実装、レビュー、Commit & PRの順に進める。実装とレビューは別々のsubagentへ委譲し、外部状態を変更する操作は親agentが担う。
 
-## 1. Explore
+## 1. Precondition
 
-Explore agentに以下を依頼する。
+Issue本文またはコメントに、次の項目を含む実装計画が記録されていることを確認する。
 
-- Issue、`docs/requirements.md`、`docs/technical-requirements.md`、関連コードを調査する。
-- `grill-with-docs`を使い、不明点、境界条件、失敗時の挙動、技術的選択を詰める。
-- 設計判断を適切な文書へ記録する。長期的な判断はADR、用語は`CONTEXT.md`、Issue固有の計画はIssue本文またはコメントへ記録する。
-- 実装対象、対象外、受け入れ条件、テスト方針、変更候補ファイルを明示する。
-- 実装は行わない。
+- 実装対象
+- 対象外
+- 技術方針
+- 受け入れ条件
+- テスト方針
+- 変更候補箇所
+- 未解決事項がないこと
 
-設計にユーザー判断が必要なら、後続段階へ進まず質問する。
+項目が不足している、内容が曖昧、または未解決事項が残っている場合は実装へ進まない。`prepare-issue`を使ってIssueを準備するようユーザーへ案内して終了する。`deliver-issue`内でGrillや設計の補完を行わない。
+
+実装計画が揃っている場合は、それをこの作業の設計と受け入れ条件の正とする。Issue、実装計画、`docs/requirements.md`、`docs/technical-requirements.md`の間に明らかな矛盾がある場合も実装へ進まず報告する。
 
 ## 2. Implement
 
-Exploreの成果をImplement agentへ渡し、以下を依頼する。
+確定した設計と受け入れ条件をImplement agentへ渡し、以下を依頼する。
 
 - 設計と受け入れ条件に沿って実装する。
 - 必要なテストを追加し、影響範囲に応じた検証を実行する。
@@ -31,15 +35,25 @@ Exploreの成果をImplement agentへ渡し、以下を依頼する。
 
 実装後、差分とテスト結果を確認してから次へ進む。
 
-## 3. Commit & PR
+## 3. Review & Verify
 
-Commit & PR agentへIssue、設計、実装差分、テスト結果を渡し、以下を依頼する。
+Implement agentとは別のReview agentへIssue、確定した設計、実装差分、テスト結果を渡し、以下を依頼する。
 
 - 差分をレビューし、Issueの受け入れ条件と一致するか確認する。
 - `cargo fmt --check`、警告をエラー扱いした`cargo clippy`、関連テストを実行する。
 - 問題があれば必要最小限の修正を行い、再検証する。
-- Issue単位でコミットを作成し、ブランチをpushする。
+- コミット、push、PR作成は行わない。
+
+親agentはレビュー結果、最終差分、検証結果を確認する。設計変更やユーザー判断が必要な問題が見つかった場合は、独断で範囲を広げずユーザーへ確認する。
+
+## 4. Commit & PR
+
+親agentが以下を行う。
+
+- Issue単位でコミットを作成する。
+- 対象ブランチとリモートを確認してpushする。
 - 変更内容、設計判断、確認結果、未対応事項、`Closes #<issue番号>`を記載したPRを作成する。
+- 作成したPRのURLと状態を確認する。
 
 ユーザーの明示的な許可なく、既存の変更を破棄、上書き、またはPRをマージしない。
 

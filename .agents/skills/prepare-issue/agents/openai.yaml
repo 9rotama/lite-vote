@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Issue"
+  short_description: "IssueをGrillし、別セッションへ渡せる実装計画を記録する"
+  default_prompt: "Use $prepare-issue to refine the selected GitHub Issue and record an implementation plan."
