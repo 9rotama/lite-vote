@@ -20,7 +20,7 @@ async fn main() -> AnyResult<()> {
     let router = Router::builder()
         .discover()
         .assets(AssetBundle::load().unwrap())
-        .app_context(database)
+        .app_context(database.pool)
         .build();
 
     topcoat::start(router).await?;
