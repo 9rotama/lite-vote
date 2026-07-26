@@ -4,9 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1"
+rusqlite = { version = "0.39", features = ["bundled"] }
 toasty = { version = "=0.8.0", default-features = false, features = ["sqlite"] }
+toasty-driver-sqlite = "=0.8.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 topcoat = { version = "=0.4.0", features = ["font-fontsource", "tailwind", "ui"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [build-dependencies]
 topcoat = { version = "=0.4.0", default-features = false, features = ["tailwind"] }

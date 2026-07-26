@@ -19,6 +19,7 @@ rustup show
 
 ```sh
 cargo install topcoat-cli --version 0.4.0 --locked
+cargo install toasty-cli --version 0.8.0 --locked
 ```
 
 ## ローカル起動
@@ -26,10 +27,17 @@ cargo install topcoat-cli --version 0.4.0 --locked
 リポジトリのルートで開発サーバーを起動します。
 
 ```sh
+cargo run --bin migrate
 topcoat dev
 ```
 
 ブラウザで <http://127.0.0.1:3000> を開いてください。停止するには `Ctrl+C` を押します。
+
+DBは既定で `var/lite-vote.sqlite3` に保存されます。パスは
+`LITE_VOTE_DATABASE_PATH`、書き込み競合の待機時間（既定5000ms）は
+`LITE_VOTE_DATABASE_BUSY_TIMEOUT_MS` で変更できます。アプリは起動時にWAL、
+外部キー、busy timeoutを有効化し、マイグレーション未適用ならHTTPサーバーを
+起動せず終了します。マイグレーションはデプロイ前にも上記コマンドで適用してください。
 
 Topcoat の Tailwind 連携は、ビルド時にスタンドアロンの Tailwind CLI を実行してCSSを生成し、Topcoat のassetとして配信します。Node.jsは開発時にも本番実行時にも必要ありません。CSS生成やasset処理に失敗した場合、ビルドまたは `topcoat dev` は失敗します。
 
