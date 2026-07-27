@@ -1,0 +1,3 @@
+# SQLiteアクセスとmigrationにはSQLxを使用する
+
+MVPのSQLiteアクセスにはSQLx 0.9.0のSQLite driverとSQL migrationを使用する。Toasty 0.8.0はモデルのrelationから外部キー制約を生成できず、WALや環境ごとのbusy timeoutを接続時に指定する公開APIもないため、4モデル、複合外部キー、および運用設定を一つの成熟したmigration・接続基盤で管理できるSQLxを選ぶ。SQLxのcompile-time query checkingはIssue #5では採用せず、実行時検査のquery APIと統合テストでRust型とSQLの整合を確認する。

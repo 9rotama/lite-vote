@@ -1,6 +1,8 @@
 mod components;
 
+use anyhow::{Context, Result as AnyResult};
 use components::button::button;
+use lite_vote::db::{DatabaseConfig, connect};
 use topcoat::{
     Result,
     asset::{AssetBundle, RouterBuilderAssetExt},
@@ -11,13 +13,18 @@ use topcoat::{
 };
 
 #[tokio::main]
-async fn main() {
+async fn main() -> AnyResult<()> {
+    let database = connect(DatabaseConfig::from_env()?)
+        .await
+        .context("database startup check failed")?;
     let router = Router::builder()
         .discover()
         .assets(AssetBundle::load().unwrap())
+        .app_context(database.pool)
         .build();
 
-    topcoat::start(router).await.unwrap();
+    topcoat::start(router).await?;
+    Ok(())
 }
 
 #[page("/")]
