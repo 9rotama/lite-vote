@@ -1,4 +1,4 @@
-use lite_vote::{
+use crate::{
     db::{DatabaseConfig, MIGRATOR, connect_pool},
     room_creation::{CreateRoomInput, create_room, hash_token},
 };
@@ -73,7 +73,7 @@ async fn invalid_input_has_no_database_side_effects() {
     .unwrap_err();
     assert!(matches!(
         error,
-        lite_vote::room_creation::CreateRoomError::Validation(_)
+        crate::room_creation::CreateRoomError::Validation(_)
     ));
     let rooms: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM voting_rooms")
         .fetch_one(&pool)

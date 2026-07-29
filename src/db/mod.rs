@@ -1,3 +1,5 @@
+//! Database connection and migration support.
+
 use anyhow::{Context, Result, bail};
 use sqlx::{
     SqlitePool,
@@ -121,3 +123,6 @@ fn ensure_parent(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
