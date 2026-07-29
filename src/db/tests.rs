@@ -1,4 +1,4 @@
-use lite_vote::{
+use crate::{
     db::{DatabaseConfig, MIGRATOR, connect, connect_pool, validate_migrations},
     models::{
         Choice, Participant, Vote, VotingRoom, find_choice, find_participant, find_vote,

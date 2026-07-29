@@ -11,3 +11,15 @@ file = "styles.css"
 [registries.topcoat.components.button]
 hash = "sha256:8dcc9609183d0a51138c7a15de06d5525388f25a3958071fab25b96efaa2b160"
 file = "src/components/button.rs"
+
+[registries.topcoat.components.input]
+hash = "sha256:7769330ae511769c1c50b39c75b7475b676af9072d2156398762cf505a3bf306"
+file = "src/components/input.rs"
+
+[registries.topcoat.components.label]
+hash = "sha256:cd8e7569717c82abad745f0586f03fbc759e6000988a82c8dce15182a409d0d6"
+file = "src/components/label.rs"
+
+[registries.topcoat.components.textarea]
+hash = "sha256:852407d012c458ea3b43fafa69fda9fa09287071dc0e1d2367671fe2c9173309"
+file = "src/components/textarea.rs"

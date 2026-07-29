@@ -1029,8 +1029,14 @@ name = "lite-vote"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
+ "http",
+ "rand 0.9.5",
+ "serde",
+ "sha2 0.10.9",
  "sqlx",
  "tempfile",
+ "thiserror",
  "tokio",
  "topcoat",
  "unicode-segmentation",
