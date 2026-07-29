@@ -1,3 +1,3 @@
 pub(crate) mod home;
 pub(crate) mod layout;
-mod room;
+pub(crate) mod room;

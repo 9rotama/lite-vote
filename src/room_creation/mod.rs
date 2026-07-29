@@ -1,15 +1,12 @@
 //! Voting room creation.
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand::TryRngCore;
-use rand::rngs::OsRng;
-use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 
-use crate::validation::{ValidatedVotingRoom, ValidationError, validate_voting_room};
+use crate::{
+    security::{hash_token, random_token},
+    validation::{ValidatedVotingRoom, ValidationError, validate_voting_room},
+};
 
-pub const TOKEN_BYTES: usize = 32;
-pub const ENCODED_TOKEN_LENGTH: usize = 43;
 pub const CREATOR_COOKIE_NAME: &str = "lite_vote_creator";
 pub const CREATOR_COOKIE_MAX_AGE_SECONDS: i64 = 34_560_000;
 const MAX_SLUG_ATTEMPTS: usize = 8;
@@ -66,18 +63,6 @@ pub enum CreateRoomError {
     SlugCollision,
 }
 
-pub fn random_token() -> Result<String, CreateRoomError> {
-    let mut bytes = [0_u8; TOKEN_BYTES];
-    OsRng
-        .try_fill_bytes(&mut bytes)
-        .map_err(|_| CreateRoomError::Random)?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
-}
-
-pub fn hash_token(token: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
-}
-
 pub fn validate_create_room(
     input: &CreateRoomInput,
 ) -> Result<(ValidatedVotingRoom, Visibility), Vec<CreateRoomValidationError>> {
@@ -107,7 +92,10 @@ pub async fn create_room(
     pool: &SqlitePool,
     input: &CreateRoomInput,
 ) -> Result<CreatedRoom, CreateRoomError> {
-    create_room_with_token_source(pool, input, random_token).await
+    create_room_with_token_source(pool, input, || {
+        random_token().map_err(|_| CreateRoomError::Random)
+    })
+    .await
 }
 
 async fn create_room_with_token_source(

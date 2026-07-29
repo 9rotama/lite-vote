@@ -4,27 +4,6 @@ use std::time::Duration;
 use tempfile::tempdir;
 
 #[test]
-fn random_tokens_are_url_safe_and_have_256_bits() {
-    let first = random_token().unwrap();
-    let second = random_token().unwrap();
-    assert_eq!(first.len(), ENCODED_TOKEN_LENGTH);
-    assert_eq!(URL_SAFE_NO_PAD.decode(&first).unwrap().len(), TOKEN_BYTES);
-    assert_ne!(first, second);
-    assert!(
-        first
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    );
-}
-
-#[test]
-fn token_hash_is_stable_and_does_not_reveal_the_token() {
-    assert_eq!(hash_token("secret"), hash_token("secret"));
-    assert_ne!(hash_token("secret"), hash_token("different"));
-    assert!(!hash_token("secret").contains("secret"));
-}
-
-#[test]
 fn visibility_accepts_only_the_two_protocol_values() {
     assert_eq!(Visibility::parse("public"), Some(Visibility::Public));
     assert_eq!(Visibility::parse("anonymous"), Some(Visibility::Anonymous));
