@@ -26,8 +26,6 @@ use topcoat::{
     tailwind,
     view::{attributes, component, view},
 };
-use unicode_segmentation::UnicodeSegmentation;
-
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     let database = connect(DatabaseConfig::from_env()?)
@@ -119,15 +117,8 @@ async fn create_form(form: RoomForm) -> Result {
     let initial_choice_count = form.choices.len() as f64;
     let mut choices = form.choices.clone();
     choices.resize(10, String::new());
-    let initial_question_error = form.question_error.clone().unwrap_or_default();
-    let initial_visibility_error = form.visibility_error.clone().unwrap_or_default();
-    let initial_visibility = form.visibility.clone().unwrap_or_default();
     view! {
         signal choice_count = initial_choice_count;
-        signal question_value = form.question.clone();
-        signal question_error = initial_question_error;
-        signal visibility_value = initial_visibility;
-        signal visibility_error = initial_visibility_error;
 
         <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
             <h1 class="text-3xl font-semibold">"投票部屋を作る"</h1>
@@ -145,71 +136,57 @@ async fn create_form(form: RoomForm) -> Result {
                 </div>
             }
             <form id="create-room" action="/rooms" method="post" class="mt-8 space-y-7" novalidate=(true)
-                @submit=$(|event: Event| {
-                    event.prevent_default();
-                    question_error.set("".to_owned());
-                    visibility_error.set("".to_owned());
-                    let question = question_value.get().trim().to_owned();
-                    let question_for_length = question_value.get().trim().to_owned();
-                    // Topcoat 0.4 has no grapheme or Unicode-category APIs.
-                    let question_length = raw!(
-                        "cx.hydrate([...new Intl.Segmenter(undefined, {granularity:'grapheme'}).segment(${question_for_length}.v)].length)",
-                        question_for_length.graphemes(true).count() as f64
-                    );
-                    let question_for_control = question_value.get().trim().to_owned();
-                    let question_has_control = raw!(
-                        "cx.hydrate(/\\p{Cc}/u.test(${question_for_control}.v))",
-                        question_for_control.chars().any(char::is_control)
-                    );
-                    if question.is_empty() {
-                        question_error.set("質問を入力してください。".to_owned());
-                    } else if question_length > 200.0 {
-                        question_error.set("質問は200文字以内で入力してください。".to_owned());
-                    } else if question_has_control {
-                        question_error.set("質問に制御文字は使えません。".to_owned());
-                    }
-                    if visibility_value.get().is_empty() {
-                        visibility_error.set("投票者名を公開するか選択してください。".to_owned());
-                    }
-                    // Topcoat 0.4 cannot hydrate or iterate a dynamic collection. This adapter
-                    // owns only FormData enumeration, grapheme/Cc checks and duplicate detection;
-                    // it updates pre-rendered error slots and never creates DOM.
-                    let choices_invalid = raw!(r#"(() => {
-const form = ${event}.current_target.inner;
-const inputs = [...form.querySelectorAll('input[name=choice]:not(:disabled)')];
+                @submit=$(|_event: Event| raw!(r#"{
+const form = ${_event}.current_target.inner;
 const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+const lengthOf = value => [...segmenter.segment(value.trim())].length;
+let first = null;
+const setError = (input, error, message) => {
+  error.textContent = message;
+  error.hidden = message === '';
+  input.setAttribute('aria-invalid', message === '' ? 'false' : 'true');
+  if (message && first === null) first = input;
+};
+
+const question = form.elements.question;
+let questionMessage = '';
+const questionLength = lengthOf(question.value);
+if (questionLength < 1) questionMessage = '質問を入力してください。';
+else if (questionLength > 200) questionMessage = '質問は200文字以内で入力してください。';
+else if (/\p{Cc}/u.test(question.value.trim())) questionMessage = '質問に制御文字は使えません。';
+setError(question, document.getElementById('question-error'), questionMessage);
+
+const inputs = [...form.querySelectorAll('input[name=choice]:not(:disabled)')];
 const seen = new Set();
-let invalid = false;
 for (const input of inputs) {
   const value = input.value.trim();
-  const length = [...segmenter.segment(value)].length;
+  const length = lengthOf(value);
   let message = '';
   if (length < 1) message = '選択肢を入力してください。';
   else if (length > 100) message = '選択肢は100文字以内で入力してください。';
   else if (/\p{Cc}/u.test(value)) message = '選択肢に制御文字は使えません。';
   else if (seen.has(value)) message = '選択肢が重複しています。';
   seen.add(value);
-  const error = document.getElementById(input.id + '-error');
-  error.textContent = message;
-  error.hidden = message === '';
-  input.setAttribute('aria-invalid', message === '' ? 'false' : 'true');
-  invalid ||= message !== '';
+  setError(input, document.getElementById(input.id + '-error'), message);
 }
-return cx.hydrate(invalid);
-})()"#, false);
-                    let has_question_error = !question_error.get().is_empty();
-                    let has_visibility_error = !visibility_error.get().is_empty();
-                    if has_question_error {
-                        raw!("document.getElementById('question').focus()", ());
-                    } else if choices_invalid {
-                        raw!("${event}.current_target.inner.querySelector('input[name=choice][aria-invalid=true]').focus()", ());
-                    } else if has_visibility_error {
-                        raw!("document.getElementById('visibility-public').focus()", ());
-                    } else {
-                        // Native submit is the final DOM boundary after Runtime validation succeeds.
-                        raw!("${event}.current_target.inner.submit()", ());
-                    }
-                })>
+
+const visibilityInputs = [...form.querySelectorAll('input[name=visibility]')];
+const visibilityError = document.getElementById('visibility-error');
+const visibilityMessage = visibilityInputs.some(input => input.checked)
+  ? ''
+  : '投票者名を公開するか選択してください。';
+visibilityError.textContent = visibilityMessage;
+visibilityError.hidden = visibilityMessage === '';
+for (const input of visibilityInputs) {
+  input.setAttribute('aria-invalid', visibilityMessage === '' ? 'false' : 'true');
+}
+if (visibilityMessage && first === null) first = visibilityInputs[0];
+
+if (first !== null) {
+  ${_event}.prevent_default();
+  first.focus();
+}
+}"#))>
                 <div>
                     label(
                         attrs: attributes! { for="question" class="block" },
@@ -221,17 +198,15 @@ return cx.hydrate(invalid);
                             name="question"
                             rows="3"
                             aria-describedby="question-help question-error"
-                            :aria-invalid=$(!question_error.get().is_empty())
-                            :value=$(question_value.get())
-                            @input=$(|event: Event| question_value.set(event.target.value))
+                            aria-invalid=(form.question_error.is_some())
                             class="mt-2"
                         },
-                        ""
+                        (form.question)
                     )
                     <p id="question-help" class="mt-1 text-sm text-muted-foreground">"1〜200文字"</p>
                     <p id="question-error" class="mt-1 text-sm text-destructive"
-                        :hidden=$(question_error.get().is_empty())>
-                        $(question_error.get())
+                        hidden=(form.question_error.is_none())>
+                        (form.question_error.clone().unwrap_or_default())
                     </p>
                 </div>
                 <fieldset>
@@ -304,22 +279,20 @@ return cx.hydrate(invalid);
                     <div id="visibility-options">
                         <label class="mt-2 flex gap-2">
                         <input id="visibility-public" type="radio" name="visibility" value="public" checked=(public_checked)
-                            :aria-invalid=$(!visibility_error.get().is_empty())
-                            aria-describedby="visibility-help visibility-error"
-                            @change=$(|_event: Event| visibility_value.set("public".to_owned()))>
+                            aria-invalid=(form.visibility_error.is_some())
+                            aria-describedby="visibility-help visibility-error">
                             <span>"公開する（誰がどの選択肢へ投票したかを参加者全員に表示します）"</span>
                         </label>
                         <label class="mt-2 flex gap-2">
                         <input id="visibility-anonymous" type="radio" name="visibility" value="anonymous" checked=(anonymous_checked)
-                            :aria-invalid=$(!visibility_error.get().is_empty())
-                            aria-describedby="visibility-help visibility-error"
-                            @change=$(|_event: Event| visibility_value.set("anonymous".to_owned()))>
+                            aria-invalid=(form.visibility_error.is_some())
+                            aria-describedby="visibility-help visibility-error">
                             <span>"公開しない（表示名を入力せず匿名で投票します）"</span>
                         </label>
                     </div>
                     <p id="visibility-error" class="mt-1 text-sm text-destructive"
-                        :hidden=$(visibility_error.get().is_empty())>
-                        $(visibility_error.get())
+                        hidden=(form.visibility_error.is_none())>
+                        (form.visibility_error.clone().unwrap_or_default())
                     </p>
                     <p id="visibility-help" class="mt-1 text-sm text-muted-foreground">
                         "作成後に公開設定は変更できません。"
