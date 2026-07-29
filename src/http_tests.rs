@@ -22,7 +22,7 @@ async fn app() -> (tempfile::TempDir, SqlitePool, Router) {
     MIGRATOR.run(&pool).await.unwrap();
     let router = Router::builder()
         .discover()
-        .assets(AssetBundle::load().unwrap())
+        .assets(AssetBundle::empty())
         .app_context(pool.clone())
         .cookies()
         .build();
