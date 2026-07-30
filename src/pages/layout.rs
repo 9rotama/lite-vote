@@ -1,9 +1,26 @@
 use topcoat::{
     Result,
-    font::fontsource::fontsource_font,
-    tailwind,
     view::{component, view},
 };
+
+#[cfg(not(test))]
+#[component]
+async fn document_assets() -> Result {
+    use topcoat::{font::fontsource::fontsource_font, tailwind};
+
+    view! {
+        topcoat::font::link(font: fontsource_font!(GEIST))
+        <link rel="stylesheet" href=(tailwind::stylesheet!())>
+        topcoat::runtime::script()
+        topcoat::dev::script()
+    }
+}
+
+#[cfg(test)]
+#[component]
+async fn document_assets() -> Result {
+    view! {}
+}
 
 #[component]
 pub(crate) async fn document(title: String, child: topcoat::view::View) -> Result {
@@ -14,10 +31,7 @@ pub(crate) async fn document(title: String, child: topcoat::view::View) -> Resul
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>(title)</title>
-                topcoat::font::link(font: fontsource_font!(GEIST))
-                <link rel="stylesheet" href=(tailwind::stylesheet!())>
-                topcoat::runtime::script()
-                topcoat::dev::script()
+                document_assets()
             </head>
             <body class="bg-background text-foreground">
                 (child)

@@ -24,3 +24,6 @@ async fn main() -> Result<()> {
     topcoat::start(router).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod http_tests;

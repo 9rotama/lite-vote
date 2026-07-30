@@ -1,6 +1,7 @@
 use crate::{
     db::{DatabaseConfig, MIGRATOR, connect_pool},
-    room_creation::{CreateRoomInput, create_room, hash_token},
+    room_creation::{CreateRoomInput, create_room},
+    security::hash_token,
 };
 use std::time::Duration;
 use tempfile::tempdir;

@@ -1,5 +1,7 @@
 pub mod db;
 pub mod models;
+pub mod participant_entry;
 pub mod results;
 pub mod room_creation;
+pub mod security;
 pub mod validation;

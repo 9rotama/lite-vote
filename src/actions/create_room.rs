@@ -7,6 +7,7 @@ use lite_vote::{
         CREATOR_COOKIE_MAX_AGE_SECONDS, CREATOR_COOKIE_NAME, CreateRoomError, CreateRoomInput,
         CreateRoomValidationError, create_room, validate_create_room,
     },
+    security::same_origin,
     validation::{ValidationErrorReason, ValidationField},
 };
 use sqlx::SqlitePool;
@@ -20,7 +21,7 @@ use topcoat::{
 
 #[route(POST "/rooms")]
 async fn post_rooms(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result<Response> {
-    if !same_origin(cx) {
+    if !same_origin(&request_context::<http::request::Parts>(cx).headers) {
         return (StatusCode::FORBIDDEN, "forbidden").into_response(cx);
     }
     let mut form = form_from_pairs(pairs);
@@ -67,25 +68,6 @@ async fn post_rooms(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result
         }
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx),
     }
-}
-
-fn same_origin(cx: &Cx) -> bool {
-    let parts = request_context::<http::request::Parts>(cx);
-    let Some(origin) = parts
-        .headers
-        .get("origin")
-        .and_then(|value| value.to_str().ok())
-    else {
-        return false;
-    };
-    let Some(host) = parts
-        .headers
-        .get("host")
-        .and_then(|value| value.to_str().ok())
-    else {
-        return false;
-    };
-    origin == format!("https://{host}") || origin == format!("http://{host}")
 }
 
 fn error_messages(errors: &[CreateRoomValidationError]) -> Vec<String> {
@@ -153,6 +135,3 @@ fn apply_field_errors(form: &mut RoomForm, errors: &[CreateRoomValidationError])
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
