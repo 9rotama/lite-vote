@@ -66,8 +66,8 @@ pub(crate) async fn create_form(form: RoomForm) -> Result {
     view! {
         signal choice_count = initial_choice_count;
 
-        <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
-            <h1 class="text-3xl font-semibold">"投票部屋を作る"</h1>
+        <main class="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+            <h1 class="text-2xl font-semibold sm:text-3xl">"投票部屋を作る"</h1>
             <p class="mt-2 text-muted-foreground">
                 "質問と2〜10個の選択肢を入力してください。"
             </p>
@@ -162,7 +162,7 @@ if (first !== null) {
                             let row_number = (index + 1) as f64;
                             let choice_error = form.choice_errors.get(index).and_then(Option::as_ref);
                             let described_by = format!("choices-help choice-{index}-error");
-                            <div class="choice-row flex items-start gap-2"
+                            <div class="choice-row flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
                                 :hidden=$(choice_count.get() < row_number)>
                                 <div class="min-w-0 flex-1">
                                     label(
@@ -222,17 +222,23 @@ if (first !== null) {
                 </fieldset>
                 <fieldset>
                     <legend class="font-medium">"投票者名の公開設定（必須）"</legend>
-                    <div id="visibility-options">
-                        <label class="mt-2 flex gap-2">
+                    <div id="visibility-options" class="space-y-2">
+                        <label class="mt-2 flex cursor-pointer items-start gap-3 rounded-lg border p-3
+                            focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2
+                            focus-within:ring-offset-background">
                         <input id="visibility-public" type="radio" name="visibility" value="public" checked=(public_checked)
                             aria-invalid=(form.visibility_error.is_some())
-                            aria-describedby="visibility-help visibility-error">
+                            aria-describedby="visibility-help visibility-error"
+                            class="mt-0.5 size-4 shrink-0">
                             <span>"公開する（誰がどの選択肢へ投票したかを参加者全員に表示します）"</span>
                         </label>
-                        <label class="mt-2 flex gap-2">
+                        <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3
+                            focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2
+                            focus-within:ring-offset-background">
                         <input id="visibility-anonymous" type="radio" name="visibility" value="anonymous" checked=(anonymous_checked)
                             aria-invalid=(form.visibility_error.is_some())
-                            aria-describedby="visibility-help visibility-error">
+                            aria-describedby="visibility-help visibility-error"
+                            class="mt-0.5 size-4 shrink-0">
                             <span>"公開しない（表示名を入力せず匿名で投票します）"</span>
                         </label>
                     </div>
