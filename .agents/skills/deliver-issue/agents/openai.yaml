@@ -1,4 +1,4 @@
 interface:
   display_name: "Deliver Issue"
-  short_description: "準備済みIssueの実装・レビューを委譲してPRを作る"
+  short_description: "Issueの実装・レビューを委譲してPRを作る"
   default_prompt: "Use $deliver-issue to implement the selected GitHub Issue and open a pull request."
