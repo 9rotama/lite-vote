@@ -3,6 +3,7 @@ pub mod models;
 pub mod participant_entry;
 pub mod results;
 pub mod room_creation;
+pub mod room_editing;
 pub mod security;
 pub mod validation;
 pub mod voting;

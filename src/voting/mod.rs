@@ -35,7 +35,9 @@ pub async fn cast_vote(
     participant_token: &str,
     choice_id: i64,
 ) -> Result<VoteOutcome, VoteError> {
-    let mut transaction = pool.begin().await?;
+    // Taking the writer lock before reading the room state serializes the
+    // first vote with creator edits, which also start with `BEGIN IMMEDIATE`.
+    let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
     let state: Option<VotingState> = sqlx::query_as(
         "SELECT id AS room_id, closed_at
          FROM voting_rooms WHERE slug = ?",

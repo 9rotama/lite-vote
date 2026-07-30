@@ -1,6 +1,8 @@
 use lite_vote::{
     db::{DatabaseConfig, MIGRATOR, connect_pool},
-    room_creation::{CreateRoomInput, create_room},
+    participant_entry::{EntryKind, EntryOutcome, create_participant, load_room},
+    room_creation::{CreateRoomInput, CreatedRoom, create_room},
+    voting::cast_vote,
 };
 use sqlx::SqlitePool;
 use std::time::Duration;
@@ -30,6 +32,10 @@ async fn app() -> (tempfile::TempDir, SqlitePool, Router) {
 }
 
 async fn create(pool: &SqlitePool, visibility: &str) -> String {
+    create_owned(pool, visibility).await.slug
+}
+
+async fn create_owned(pool: &SqlitePool, visibility: &str) -> CreatedRoom {
     create_room(
         pool,
         &CreateRoomInput {
@@ -40,7 +46,6 @@ async fn create(pool: &SqlitePool, visibility: &str) -> String {
     )
     .await
     .unwrap()
-    .slug
 }
 
 async fn send(
@@ -83,6 +88,104 @@ fn participant_cookie(headers: &http::HeaderMap) -> String {
         .next()
         .unwrap()
         .to_owned()
+}
+
+fn creator_cookie(token: &str) -> String {
+    format!("lite_vote_creator={token}")
+}
+
+#[tokio::test]
+async fn creator_can_open_and_submit_the_room_edit_form() {
+    let (_dir, pool, router) = app().await;
+    let created = create_owned(&pool, "anonymous").await;
+    let cookie = creator_cookie(&created.creator_token);
+    let edit_path = format!("/rooms/{}/edit", created.slug);
+
+    let (status, _, body) = send(&router, Method::GET, &edit_path, "", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("投票部屋を編集"));
+    assert!(body.contains("name=\"question\""));
+    assert!(body.contains("value=\"A\""));
+    assert!(body.contains("選択肢を追加"));
+
+    let (status, headers, _) = send(
+        &router,
+        Method::POST,
+        &edit_path,
+        "question=%20Updated%20&choice=%20X%20&choice=Y&choice=Z",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        headers.get(header::LOCATION).unwrap().to_str().unwrap(),
+        format!("/rooms/{}", created.slug)
+    );
+    let details = load_room(&pool, &created.slug).await.unwrap().unwrap();
+    assert_eq!(details.room.question, "Updated");
+    assert_eq!(
+        details
+            .choices
+            .iter()
+            .map(|choice| choice.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["X", "Y", "Z"]
+    );
+}
+
+#[tokio::test]
+async fn edit_http_endpoint_enforces_creator_validation_and_first_vote() {
+    let (_dir, pool, router) = app().await;
+    let created = create_owned(&pool, "anonymous").await;
+    let cookie = creator_cookie(&created.creator_token);
+    let path = format!("/rooms/{}/edit", created.slug);
+
+    let (status, _, _) = send(&router, Method::GET, &path, "", None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, body) = send(
+        &router,
+        Method::POST,
+        &path,
+        "question=&choice=same&choice=same",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body.contains("質問を入力してください"));
+    assert!(body.contains("選択肢 2が重複しています"));
+
+    let participant_token = match create_participant(&pool, &created.slug, EntryKind::Anonymous)
+        .await
+        .unwrap()
+    {
+        EntryOutcome::Created { token, .. } => token,
+        other => panic!("unexpected entry outcome: {other:?}"),
+    };
+    let choice_id = load_room(&pool, &created.slug)
+        .await
+        .unwrap()
+        .unwrap()
+        .choices[0]
+        .id;
+    cast_vote(&pool, &created.slug, &participant_token, choice_id)
+        .await
+        .unwrap();
+
+    let (status, _, _) = send(&router, Method::GET, &path, "", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _, body) = send(
+        &router,
+        Method::POST,
+        &path,
+        "question=Too+late&choice=X&choice=Y",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(body.contains("編集できません"));
 }
 
 #[tokio::test]
