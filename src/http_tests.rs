@@ -259,3 +259,115 @@ async fn closed_missing_and_cross_origin_requests_have_no_participant_side_effec
         0
     );
 }
+
+#[tokio::test]
+async fn vote_route_uses_radios_and_updates_the_existing_participant_vote() {
+    let (_dir, pool, router) = app().await;
+    let slug = create(&pool, "anonymous").await;
+    let room_path = format!("/rooms/{slug}");
+    let (status, headers, body) = send(&router, Method::GET, &room_path, "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.matches("type=\"radio\"").count(), 2);
+    assert_eq!(body.matches("name=\"choice_id\"").count(), 2);
+    assert!(body.contains("投票先を一つ選んでください"));
+    let cookie = participant_cookie(&headers);
+    let vote_path = format!("{room_path}/votes");
+
+    let (status, headers, _) = send(
+        &router,
+        Method::POST,
+        &vote_path,
+        "choice_id=1",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers.get(header::LOCATION).unwrap(), &room_path);
+
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &vote_path,
+        "choice_id=2",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let votes: Vec<i64> = sqlx::query_scalar("SELECT choice_id FROM votes")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(votes, vec![2]);
+
+    let (status, _, body) = send(&router, Method::GET, &room_path, "", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("投票先を変更する"));
+    assert!(body.contains("value=\"2\" checked"));
+}
+
+#[tokio::test]
+async fn vote_route_rejects_missing_or_invalid_security_state_and_closed_rooms() {
+    let (_dir, pool, router) = app().await;
+    let slug = create(&pool, "anonymous").await;
+    let room_path = format!("/rooms/{slug}");
+    let (_, headers, _) = send(&router, Method::GET, &room_path, "", None, None).await;
+    let cookie = participant_cookie(&headers);
+    let vote_path = format!("{room_path}/votes");
+
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &vote_path,
+        "choice_id=1",
+        Some(&cookie),
+        Some("https://evil.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &vote_path,
+        "choice_id=1",
+        None,
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &vote_path,
+        "choice_id=999",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    sqlx::query("UPDATE voting_rooms SET closed_at = CURRENT_TIMESTAMP WHERE slug = ?")
+        .bind(&slug)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, _, body) = send(
+        &router,
+        Method::POST,
+        &vote_path,
+        "choice_id=1",
+        Some(&cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(body.contains("締め切られています"));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM votes")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}

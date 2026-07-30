@@ -3,6 +3,7 @@ use crate::{
     pages::layout::document,
 };
 use lite_vote::{
+    models::find_vote,
     participant_entry::{
         EntryKind, EntryOutcome, PARTICIPANT_COOKIE_MAX_AGE_SECONDS, PARTICIPANT_COOKIE_NAME,
         RoomDetails, create_participant, find_participant_by_token, load_room,
@@ -140,8 +141,13 @@ if (message) {
 }
 
 #[component]
-async fn voting_room(details: RoomDetails, display_name_to_remember: Option<String>) -> Result {
+async fn voting_room(
+    details: RoomDetails,
+    selected_choice_id: Option<i64>,
+    display_name_to_remember: Option<String>,
+) -> Result {
     let closed = details.room.is_closed();
+    let action = format!("/rooms/{}/votes", details.room.slug);
     view! {
         <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
             <h1 class="text-3xl font-semibold">(details.room.question)</h1>
@@ -154,14 +160,33 @@ async fn voting_room(details: RoomDetails, display_name_to_remember: Option<Stri
                     "匿名の投票部屋です。"
                 }
             </p>
-            <ul id="room-choices" class="mt-6 space-y-2">
-                for choice in details.choices {
-                    <li class="rounded-lg border p-3">(choice.text)</li>
+            <form action=(action) method="post" class="mt-8">
+                <fieldset id="room-choices" disabled=(closed)>
+                    <legend class="text-lg font-medium">"投票先を一つ選んでください"</legend>
+                    <div class="mt-4 space-y-3">
+                        for choice in details.choices {
+                            <label class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
+                                has-[:checked]:border-primary has-[:checked]:bg-muted
+                                focus-within:ring-2 focus-within:ring-ring">
+                                <input type="radio" name="choice_id" value=(choice.id.to_string())
+                                    checked=(selected_choice_id == Some(choice.id))
+                                    required=(true)
+                                    class="size-4">
+                                <span>(choice.text)</span>
+                            </label>
+                        }
+                    </div>
+                </fieldset>
+                if !closed {
+                    button(attrs: attributes! { type="submit" class="mt-6" },
+                        if selected_choice_id.is_some() {
+                            "投票先を変更する"
+                        } else {
+                            "投票する"
+                        }
+                    )
                 }
-            </ul>
-            if !closed {
-                <p class="mt-8 text-muted-foreground">"投票機能は準備中です。"</p>
-            }
+            </form>
             if let Some(display_name) = display_name_to_remember {
                 <script>(Unescaped::new_unchecked(format!(
                     "try {{ localStorage.setItem('lite_vote_last_display_name', {}); }} catch (_) {{}}",
@@ -224,6 +249,10 @@ async fn room(cx: &Cx) -> Result {
     };
     if let Some((participant, token)) = existing {
         set_participant_cookie(cx, slug, &token);
+        let selected_choice_id = find_vote(pool, details.room.id, participant.id)
+            .await
+            .map_err(topcoat::Error::from)?
+            .map(|vote| vote.choice_id);
         let remember = details
             .room
             .participant_names_public
@@ -232,6 +261,7 @@ async fn room(cx: &Cx) -> Result {
         let title = format!("{} - Lite Vote", details.room.question);
         return view! { document(title: title, voting_room(
             details: details,
+            selected_choice_id: selected_choice_id,
             display_name_to_remember: remember,
         )) };
     }
@@ -239,6 +269,7 @@ async fn room(cx: &Cx) -> Result {
         let title = format!("{} - Lite Vote", details.room.question);
         return view! { document(title: title, voting_room(
             details: details,
+            selected_choice_id: None,
             display_name_to_remember: None,
         )) };
     }
@@ -256,6 +287,7 @@ async fn room(cx: &Cx) -> Result {
             let title = format!("{} - Lite Vote", details.room.question);
             view! { document(title: title, voting_room(
                 details: details,
+                selected_choice_id: None,
                 display_name_to_remember: None,
             )) }
         }
@@ -267,6 +299,7 @@ async fn room(cx: &Cx) -> Result {
             if details.room.is_closed() {
                 view! { document(title: title, voting_room(
                     details: details,
+                    selected_choice_id: None,
                     display_name_to_remember: None,
                 )) }
             } else if details.room.participant_names_public {
