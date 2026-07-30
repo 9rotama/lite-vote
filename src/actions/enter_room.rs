@@ -10,7 +10,8 @@ use lite_vote::{
         EntryError, EntryKind, EntryOutcome, PARTICIPANT_COOKIE_NAME, create_participant,
         find_participant_by_token, load_room,
     },
-    security::same_origin,
+    room_creation::CREATOR_COOKIE_NAME,
+    security::{hash_token, same_origin},
 };
 use sqlx::SqlitePool;
 use topcoat::{
@@ -36,6 +37,9 @@ async fn post_participant(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> 
         return (StatusCode::NOT_FOUND, body).into_response(cx);
     };
     let path = format!("/rooms/{slug}");
+    let is_creator = cookies(cx)
+        .get(CREATOR_COOKIE_NAME)
+        .is_some_and(|cookie| hash_token(cookie.value()) == details.room.creator_token_hash);
 
     if let Some(cookie) = cookies(cx).get(PARTICIPANT_COOKIE_NAME)
         && find_participant_by_token(pool, details.room.id, cookie.value())
@@ -75,6 +79,7 @@ async fn post_participant(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> 
                     error: Some(display_name_error(&error)),
                 },
                 creator_can_edit: false,
+                is_creator: is_creator,
             )) }?;
             (StatusCode::UNPROCESSABLE_ENTITY, body).into_response(cx)
         }

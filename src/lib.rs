@@ -1,3 +1,4 @@
+pub mod closing;
 pub mod db;
 pub mod models;
 pub mod participant_entry;

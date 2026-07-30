@@ -269,6 +269,7 @@ async fn public_entry_sets_a_scoped_secure_cookie_and_revisit_reuses_participant
     let (status, headers, body) = send(&router, Method::GET, &path, "", Some(&cookie), None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("id=\"room-choices\""));
+    assert!(body.contains("現在の結果"));
     assert!(body.contains("lite_vote_last_display_name"));
     assert!(
         headers
@@ -294,6 +295,7 @@ async fn anonymous_room_creates_participant_on_get_without_using_display_name_st
     let (status, headers, body) = send(&router, Method::GET, &path, "", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("id=\"room-choices\""));
+    assert!(body.contains("現在の結果"));
     assert!(!body.contains("name=\"display_name\""));
     assert!(!body.contains("lite_vote_last_display_name"));
     let _cookie = participant_cookie(&headers);
@@ -316,7 +318,9 @@ async fn closed_missing_and_cross_origin_requests_have_no_participant_side_effec
     let path = format!("/rooms/{slug}");
     let (status, headers, body) = send(&router, Method::GET, &path, "", None, None).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("id=\"room-choices\""));
+    assert!(body.contains("id=\"room-results\""));
+    assert!(body.contains("確定結果"));
+    assert!(body.contains("勝者なし"));
     assert!(body.contains("締め切られています"));
     assert!(headers.get_all(header::SET_COOKIE).iter().next().is_none());
 
@@ -472,5 +476,117 @@ async fn vote_route_rejects_missing_or_invalid_security_state_and_closed_rooms()
             .await
             .unwrap(),
         0
+    );
+}
+
+#[tokio::test]
+async fn creator_closes_once_and_participant_url_shows_all_tied_winners() {
+    let (_dir, pool, router) = app().await;
+    let created = create_owned(&pool, "anonymous").await;
+    let room_path = format!("/rooms/{}", created.slug);
+    let close_path = format!("{room_path}/close");
+
+    let (_, first_headers, _) = send(&router, Method::GET, &room_path, "", None, None).await;
+    let first_cookie = participant_cookie(&first_headers);
+    let (_, second_headers, _) = send(&router, Method::GET, &room_path, "", None, None).await;
+    let second_cookie = participant_cookie(&second_headers);
+    let vote_path = format!("{room_path}/votes");
+    for (cookie, choice_id) in [(&first_cookie, 1), (&second_cookie, 2)] {
+        let (status, _, _) = send(
+            &router,
+            Method::POST,
+            &vote_path,
+            &format!("choice_id={choice_id}"),
+            Some(cookie),
+            Some("https://vote.example"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+    }
+
+    let creator_cookie = creator_cookie(&created.creator_token);
+    let (status, headers, _) = send(
+        &router,
+        Method::POST,
+        &close_path,
+        "",
+        Some(&creator_cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers.get(header::LOCATION).unwrap(), &room_path);
+    let closed_at: String = sqlx::query_scalar("SELECT closed_at FROM voting_rooms WHERE slug = ?")
+        .bind(&created.slug)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &close_path,
+        "",
+        Some(&creator_cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT closed_at FROM voting_rooms WHERE slug = ?")
+            .bind(&created.slug)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        closed_at
+    );
+
+    let (status, headers, body) = send(&router, Method::GET, &room_path, "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers.get_all(header::SET_COOKIE).iter().next().is_none());
+    assert!(body.contains("確定結果"));
+    assert!(body.contains("合計 2票"));
+    assert_eq!(body.matches("1票（50.0%）").count(), 2);
+    assert_eq!(body.matches("最多得票").count(), 2);
+    assert!(!body.contains("type=\"radio\""));
+    assert!(!body.contains("投票を締め切る"));
+    assert!(!body.contains("質問と選択肢を編集"));
+}
+
+#[tokio::test]
+async fn close_route_requires_creator_and_same_origin() {
+    let (_dir, pool, router) = app().await;
+    let created = create_owned(&pool, "anonymous").await;
+    let close_path = format!("/rooms/{}/close", created.slug);
+    let cookie = creator_cookie(&created.creator_token);
+
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &close_path,
+        "",
+        None,
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &close_path,
+        "",
+        Some(&cookie),
+        Some("https://evil.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(
+        load_room(&pool, &created.slug)
+            .await
+            .unwrap()
+            .unwrap()
+            .room
+            .closed_at
+            .is_none()
     );
 }
