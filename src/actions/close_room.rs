@@ -1,6 +1,7 @@
 use crate::pages::room::room_not_found;
 use lite_vote::{
     closing::{CloseRoomOutcome, close_room},
+    realtime::RoomUpdateHub,
     room_creation::CREATOR_COOKIE_NAME,
     security::same_origin,
 };
@@ -26,7 +27,10 @@ async fn post_close_room(cx: &Cx) -> Result<Response> {
     };
     let slug = path_param::<Slug>(cx);
     match close_room(app_context::<SqlitePool>(cx), slug, cookie.value()).await {
-        Ok(CloseRoomOutcome::Closed) => see_other(&format!("/rooms/{slug}")).into_response(cx),
+        Ok(CloseRoomOutcome::Closed) => {
+            app_context::<RoomUpdateHub>(cx).notify(slug);
+            see_other(&format!("/rooms/{slug}")).into_response(cx)
+        }
         Ok(CloseRoomOutcome::NotFound) => {
             let body = view! { room_not_found() }?;
             (StatusCode::NOT_FOUND, body).into_response(cx)

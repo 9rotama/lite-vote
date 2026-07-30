@@ -3,7 +3,10 @@ mod components;
 mod pages;
 
 use anyhow::{Context, Result};
-use lite_vote::db::{DatabaseConfig, connect};
+use lite_vote::{
+    db::{DatabaseConfig, connect},
+    realtime::RoomUpdateHub,
+};
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
     cookie::RouterBuilderCookieExt,
@@ -19,6 +22,7 @@ async fn main() -> Result<()> {
         .discover()
         .assets(AssetBundle::load().unwrap())
         .app_context(database.pool)
+        .app_context(RoomUpdateHub::default())
         .cookies()
         .build();
     topcoat::start(router).await?;

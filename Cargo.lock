@@ -795,6 +795,7 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -1030,7 +1031,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "bytes",
  "http",
+ "http-body-util",
  "rand 0.9.5",
  "serde",
  "sha2 0.10.9",
