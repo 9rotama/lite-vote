@@ -1,31 +1,23 @@
 ---
 name: deliver-issue
-description: 実装計画が記録済みのGitHub Issueを、subagentによる実装・レビューと、親agentによるコミット・Pull Request作成に分けて完了させる。lite-voteで準備済みIssueの実装、PR作成、または「implement→review→commit&pr」の進行を依頼されたときに使用する。Issueの要件整理や設計が必要な場合はprepare-issueを使用する。
+description: GitHub Issueを、subagentによる実装・レビューと、親agentによるコミット・Pull Request作成に分けて完了させる。lite-voteでIssueの実装、PR作成、または「implement→review→commit&pr」の進行を依頼されたときに使用する。
 ---
 
 # Deliver Issue
 
-対象Issueに記録された実装計画を読み、実装、レビュー、Commit & PRの順に進める。実装とレビューは別々のsubagentへ委譲し、外部状態を変更する操作は親agentが担う。
+対象Issueとリポジトリの情報を読み、実装、レビュー、Commit & PRの順に進める。実装とレビューは別々のsubagentへ委譲し、外部状態を変更する操作は親agentが担う。
 
-## 1. Precondition
+## 1. Understand the Issue
 
-Issue本文またはコメントに、次の項目を含む実装計画が記録されていることを確認する。
+Issue本文とコメントを読み、目的、要求、受け入れ条件、対象範囲を把握する。
 
-- 実装対象
-- 対象外
-- 技術方針
-- 受け入れ条件
-- テスト方針
-- 変更候補箇所
-- 未解決事項がないこと
+不足する情報は、コード、テスト、`docs/requirements.md`、`docs/technical-requirements.md`、関連Issueや履歴から安全に補う。複数の妥当な選択肢によって成果が大きく変わり、リポジトリから判断できない場合に限り、選択肢と影響を示してユーザーへ確認する。
 
-項目が不足している、内容が曖昧、または未解決事項が残っている場合は実装へ進まない。`prepare-issue`を使ってIssueを準備するようユーザーへ案内して終了する。`deliver-issue`内でGrillや設計の補完を行わない。
-
-実装計画が揃っている場合は、それをこの作業の設計と受け入れ条件の正とする。Issue、実装計画、`docs/requirements.md`、`docs/technical-requirements.md`の間に明らかな矛盾がある場合も実装へ進まず報告する。
+Issueとリポジトリの要求に明らかな矛盾があり、安全な解釈を選べない場合は実装へ進まず報告する。
 
 ## 2. Implement
 
-確定した設計と受け入れ条件をImplement agentへ渡し、以下を依頼する。
+Issueから把握した要求、受け入れ条件、対象範囲、関連するリポジトリ情報をImplement agentへ渡し、以下を依頼する。
 
 - 設計と受け入れ条件に沿って実装する。
 - 必要なテストを追加し、影響範囲に応じた検証を実行する。
@@ -37,7 +29,7 @@ Issue本文またはコメントに、次の項目を含む実装計画が記録
 
 ## 3. Review & Verify
 
-Implement agentとは別のReview agentへIssue、確定した設計、実装差分、テスト結果を渡し、以下を依頼する。
+Implement agentとは別のReview agentへIssue、把握した要求と対象範囲、実装差分、テスト結果を渡し、以下を依頼する。
 
 - 差分をレビューし、Issueの受け入れ条件と一致するか確認する。
 - `cargo fmt --check`、警告をエラー扱いした`cargo clippy`、関連テストを実行する。
