@@ -216,7 +216,47 @@ async fn voting_room(
                 </a>
             }
             if !closed {
-                <form action=(action) method="post" class="mt-8">
+                <form action=(action) method="post" class="mt-8"
+                    @submit=$(|_event: Event| raw!(r#"{
+${_event}.prevent_default();
+const form = ${_event}.current_target.inner;
+if (form.dataset.submitting === 'true') return;
+form.dataset.submitting = 'true';
+const button = form.querySelector('button[type="submit"]');
+const errorElement = document.getElementById('vote-error');
+if (button) button.disabled = true;
+errorElement.hidden = true;
+errorElement.textContent = '';
+fetch(form.action, {
+  method: 'POST',
+  body: new URLSearchParams(new FormData(form)),
+  headers: {'X-Lite-Vote-Partial': 'results'}
+}).then(async response => {
+  const html = await response.text();
+  if (!response.ok) throw new Error(html);
+  const template = document.createElement('template');
+  template.innerHTML = html.trim();
+  const nextResults = template.content.firstElementChild;
+  const currentResults = document.getElementById('room-results');
+  if (!nextResults || nextResults.id !== 'room-results' || !currentResults) {
+    throw new Error('結果を更新できませんでした。');
+  }
+  currentResults.replaceWith(nextResults);
+  if (button) button.textContent = '投票先を変更する';
+  const status = document.getElementById('results-update-status');
+  if (status) {
+    status.textContent = '結果を更新しました。合計 ' +
+      nextResults.dataset.totalVotes + '票です。';
+  }
+}).catch(error => {
+  errorElement.textContent =
+    error.message || '投票できませんでした。もう一度お試しください。';
+  errorElement.hidden = false;
+}).finally(() => {
+  form.dataset.submitting = 'false';
+  if (button) button.disabled = false;
+});
+}"#))>
                     <fieldset id="room-choices">
                         <legend class="text-lg font-medium">"投票先を一つ選んでください"</legend>
                         <div class="mt-4 space-y-3">
@@ -240,52 +280,17 @@ async fn voting_room(
                             "投票する"
                         }
                     )
+                    <p id="vote-error" class="mt-3 text-sm text-destructive"
+                        role="alert" hidden=(true)></p>
                 </form>
             }
-            <section id="room-results" class="mt-10" aria-live="polite" aria-atomic="true">
-                <h2 class="text-xl font-semibold">
-                    if closed {
-                        "確定結果"
-                    } else {
-                        "現在の結果"
-                    }
-                </h2>
-                <p class="mt-1 text-sm text-muted-foreground">
-                    (format!("合計 {}票", results.total_votes))
-                </p>
-                if closed && results.total_votes == 0 {
-                    <p class="mt-4 rounded-lg border p-4 font-medium">"勝者なし"</p>
-                }
-                <ol class="mt-4 space-y-3">
-                    for result in results.choices {
-                        <li class=(if result.is_winner {
-                            "rounded-lg border-2 border-primary bg-muted p-4"
-                        } else {
-                            "rounded-lg border p-4"
-                        })>
-                            <div class="flex items-start justify-between gap-4">
-                                <span class="font-medium">(result.text)</span>
-                                <span class="shrink-0">
-                                    (format!(
-                                        "{}票（{}.{:01}%）",
-                                        result.vote_count,
-                                        result.percentage_tenths / 10,
-                                        result.percentage_tenths % 10
-                                    ))
-                                </span>
-                            </div>
-                            if result.is_winner {
-                                <p class="mt-2 text-sm font-semibold">"最多得票"</p>
-                            }
-                            if details.room.participant_names_public && !result.voter_names.is_empty() {
-                                <p class="mt-2 text-sm text-muted-foreground">
-                                    (format!("投票者: {}", result.voter_names.join("、")))
-                                </p>
-                            }
-                        </li>
-                    }
-                </ol>
-            </section>
+            <p id="results-update-status" class="sr-only" role="status"
+                aria-live="polite" aria-atomic="true"></p>
+            results_region(
+                results: results,
+                closed: closed,
+                participant_names_public: details.room.participant_names_public,
+            )
             if is_creator && !closed {
                 close_room_form(slug: details.room.slug.clone())
             }
@@ -296,6 +301,61 @@ async fn voting_room(
                 )))</script>
             }
         </main>
+    }
+}
+
+#[component]
+pub(crate) async fn results_region(
+    results: RoomResults,
+    closed: bool,
+    participant_names_public: bool,
+) -> Result {
+    view! {
+        <section id="room-results" class="mt-10"
+            data-total-votes=(results.total_votes.to_string())>
+            <h2 class="text-xl font-semibold">
+                if closed {
+                    "確定結果"
+                } else {
+                    "現在の結果"
+                }
+            </h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+                (format!("合計 {}票", results.total_votes))
+            </p>
+            if closed && results.total_votes == 0 {
+                <p class="mt-4 rounded-lg border p-4 font-medium">"勝者なし"</p>
+            }
+            <ol class="mt-4 space-y-3">
+                for result in results.choices {
+                    <li class=(if result.is_winner {
+                        "rounded-lg border-2 border-primary bg-muted p-4"
+                    } else {
+                        "rounded-lg border p-4"
+                    })>
+                        <div class="flex items-start justify-between gap-4">
+                            <span class="font-medium">(result.text)</span>
+                            <span class="shrink-0">
+                                (format!(
+                                    "{}票（{}.{:01}%）",
+                                    result.vote_count,
+                                    result.percentage_tenths / 10,
+                                    result.percentage_tenths % 10
+                                ))
+                            </span>
+                        </div>
+                        if result.is_winner {
+                            <p class="mt-2 text-sm font-semibold">"最多得票"</p>
+                        }
+                        if participant_names_public && !result.voter_names.is_empty() {
+                            <p class="mt-2 text-sm text-muted-foreground">
+                                (format!("投票者: {}", result.voter_names.join("、")))
+                            </p>
+                        }
+                    </li>
+                }
+            </ol>
+        </section>
     }
 }
 

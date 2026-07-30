@@ -56,6 +56,18 @@ async fn send(
     cookie: Option<&str>,
     origin: Option<&str>,
 ) -> (StatusCode, http::HeaderMap, String) {
+    send_with_partial_header(router, method, path, body, cookie, origin, false).await
+}
+
+async fn send_with_partial_header(
+    router: &Router,
+    method: Method,
+    path: &str,
+    body: &str,
+    cookie: Option<&str>,
+    origin: Option<&str>,
+    partial: bool,
+) -> (StatusCode, http::HeaderMap, String) {
     let mut request = http::Request::builder()
         .method(method)
         .uri(path)
@@ -68,6 +80,9 @@ async fn send(
     }
     if let Some(origin) = origin {
         request = request.header(header::ORIGIN, origin);
+    }
+    if partial {
+        request = request.header("x-lite-vote-partial", "results");
     }
     let response = router
         .handle(request.body(Body::from(body.to_owned())).unwrap())
@@ -412,6 +427,108 @@ async fn vote_route_uses_radios_and_updates_the_existing_participant_vote() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("投票先を変更する"));
     assert!(body.contains("value=\"2\" checked"));
+}
+
+#[tokio::test]
+async fn partial_vote_response_updates_only_results_and_announces_the_change() {
+    let (_dir, pool, router) = app().await;
+    let slug = create(&pool, "anonymous").await;
+    let room_path = format!("/rooms/{slug}");
+    let (status, headers, body) = send(&router, Method::GET, &room_path, "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("X-Lite-Vote-Partial"));
+    assert!(body.contains("id=\"results-update-status\""));
+    assert!(body.contains("role=\"status\""));
+    let cookie = participant_cookie(&headers);
+
+    let (status, _, body) = send_with_partial_header(
+        &router,
+        Method::POST,
+        &format!("{room_path}/votes"),
+        "choice_id=1",
+        Some(&cookie),
+        Some("https://vote.example"),
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.starts_with("<section"));
+    assert!(body.contains("id=\"room-results\""));
+    assert!(body.contains("data-total-votes=\"1\""));
+    assert!(body.contains("1票（100.0%）"));
+    assert!(!body.contains("<html"));
+    assert!(!body.contains("id=\"room-choices\""));
+}
+
+#[tokio::test]
+async fn results_fragment_obeys_room_name_visibility() {
+    let (_dir, pool, router) = app().await;
+    let public_slug = create(&pool, "public").await;
+    let public_token = match create_participant(&pool, &public_slug, EntryKind::Public("Alice"))
+        .await
+        .unwrap()
+    {
+        EntryOutcome::Created { token, .. } => token,
+        other => panic!("unexpected entry outcome: {other:?}"),
+    };
+    let public_choice = load_room(&pool, &public_slug)
+        .await
+        .unwrap()
+        .unwrap()
+        .choices[0]
+        .id;
+    cast_vote(&pool, &public_slug, &public_token, public_choice)
+        .await
+        .unwrap();
+    let (status, _, body) = send(
+        &router,
+        Method::GET,
+        &format!("/rooms/{public_slug}/results"),
+        "",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Alice"));
+    assert!(body.contains("投票者:"));
+    assert!(body.contains("1票（100.0%）"));
+
+    let anonymous_slug = create(&pool, "anonymous").await;
+    let anonymous_token = match create_participant(&pool, &anonymous_slug, EntryKind::Anonymous)
+        .await
+        .unwrap()
+    {
+        EntryOutcome::Created { token, .. } => token,
+        other => panic!("unexpected entry outcome: {other:?}"),
+    };
+    let anonymous_details = load_room(&pool, &anonymous_slug).await.unwrap().unwrap();
+    sqlx::query("UPDATE participants SET display_name = 'Secret name' WHERE room_id = ?")
+        .bind(anonymous_details.room.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    cast_vote(
+        &pool,
+        &anonymous_slug,
+        &anonymous_token,
+        anonymous_details.choices[1].id,
+    )
+    .await
+    .unwrap();
+    let (status, _, body) = send(
+        &router,
+        Method::GET,
+        &format!("/rooms/{anonymous_slug}/results"),
+        "",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("1票（100.0%）"));
+    assert!(!body.contains("Secret name"));
+    assert!(!body.contains("投票者:"));
 }
 
 #[tokio::test]
