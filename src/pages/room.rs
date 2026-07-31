@@ -1,5 +1,9 @@
 use crate::{
-    components::{button::button, input::input, label::label},
+    components::{
+        button::{ButtonSize, ButtonVariant, button, button_variants},
+        input::input,
+        label::label,
+    },
     pages::layout::document,
 };
 use lite_vote::{
@@ -9,6 +13,7 @@ use lite_vote::{
         RoomDetails, create_participant, find_participant_by_token, load_room,
     },
     room_creation::{CREATOR_COOKIE_MAX_AGE_SECONDS, CREATOR_COOKIE_NAME},
+    room_editing::room_has_votes,
     security::hash_token,
 };
 use sqlx::SqlitePool;
@@ -42,7 +47,7 @@ pub(crate) fn set_participant_cookie(cx: &Cx, slug: &str, token: &str) {
     );
 }
 
-fn refresh_creator_cookie(cx: &Cx, details: &RoomDetails) {
+fn refresh_creator_cookie(cx: &Cx, details: &RoomDetails) -> bool {
     if let Some(cookie) = cookies(cx).get(CREATOR_COOKIE_NAME)
         && hash_token(cookie.value()) == details.room.creator_token_hash
     {
@@ -55,6 +60,9 @@ fn refresh_creator_cookie(cx: &Cx, details: &RoomDetails) {
                 .max_age(Duration::seconds(CREATOR_COOKIE_MAX_AGE_SECONDS))
                 .build(),
         );
+        true
+    } else {
+        false
     }
 }
 
@@ -71,12 +79,25 @@ pub(crate) fn display_name_error(error: &lite_vote::validation::ValidationError)
 }
 
 #[component]
-pub(crate) async fn participant_form(details: RoomDetails, form: ParticipantForm) -> Result {
+pub(crate) async fn participant_form(
+    details: RoomDetails,
+    form: ParticipantForm,
+    creator_can_edit: bool,
+) -> Result {
     let action = format!("/rooms/{}/participants", details.room.slug);
     view! {
         <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
             <h1 class="text-3xl font-semibold">(details.room.question)</h1>
             <p class="mt-2 text-muted-foreground">"表示名を入力して投票部屋へ入ってください。"</p>
+            if creator_can_edit {
+                <a href=(format!("/rooms/{}/edit", details.room.slug))
+                    class=(format!("mt-6 {}", button_variants(
+                        ButtonVariant::Outline,
+                        ButtonSize::Md
+                    )))>
+                    "質問と選択肢を編集"
+                </a>
+            }
             <div class="mt-6 rounded-lg border p-4">
                 <p>
                     "表示名と投票先は参加者全員へ公開され、締切後の結果にも残ります。"
@@ -145,6 +166,7 @@ async fn voting_room(
     details: RoomDetails,
     selected_choice_id: Option<i64>,
     display_name_to_remember: Option<String>,
+    creator_can_edit: bool,
 ) -> Result {
     let closed = details.room.is_closed();
     let action = format!("/rooms/{}/votes", details.room.slug);
@@ -160,6 +182,15 @@ async fn voting_room(
                     "匿名の投票部屋です。"
                 }
             </p>
+            if creator_can_edit {
+                <a href=(format!("/rooms/{}/edit", details.room.slug))
+                    class=(format!("mt-6 {}", button_variants(
+                        ButtonVariant::Outline,
+                        ButtonSize::Md
+                    )))>
+                    "質問と選択肢を編集"
+                </a>
+            }
             <form action=(action) method="post" class="mt-8">
                 <fieldset id="room-choices" disabled=(closed)>
                     <legend class="text-lg font-medium">"投票先を一つ選んでください"</legend>
@@ -237,7 +268,12 @@ async fn room(cx: &Cx) -> Result {
     let Some(details) = load_room(pool, slug).await.map_err(topcoat::Error::from)? else {
         return view! { (StatusCode::NOT_FOUND) room_not_found() };
     };
-    refresh_creator_cookie(cx, &details);
+    let is_creator = refresh_creator_cookie(cx, &details);
+    let creator_can_edit = is_creator
+        && !details.room.is_closed()
+        && !room_has_votes(pool, details.room.id)
+            .await
+            .map_err(topcoat::Error::from)?;
 
     let existing = if let Some(cookie) = cookies(cx).get(PARTICIPANT_COOKIE_NAME) {
         find_participant_by_token(pool, details.room.id, cookie.value())
@@ -263,6 +299,7 @@ async fn room(cx: &Cx) -> Result {
             details: details,
             selected_choice_id: selected_choice_id,
             display_name_to_remember: remember,
+            creator_can_edit: creator_can_edit,
         )) };
     }
     if details.room.is_closed() {
@@ -271,6 +308,7 @@ async fn room(cx: &Cx) -> Result {
             details: details,
             selected_choice_id: None,
             display_name_to_remember: None,
+            creator_can_edit: creator_can_edit,
         )) };
     }
     if details.room.participant_names_public {
@@ -278,6 +316,7 @@ async fn room(cx: &Cx) -> Result {
         return view! { document(title: title, participant_form(
             details: details,
             form: ParticipantForm::default(),
+            creator_can_edit: creator_can_edit,
         )) };
     }
 
@@ -289,6 +328,7 @@ async fn room(cx: &Cx) -> Result {
                 details: details,
                 selected_choice_id: None,
                 display_name_to_remember: None,
+                creator_can_edit: creator_can_edit,
             )) }
         }
         Ok(EntryOutcome::Closed | EntryOutcome::VisibilityChanged) => {
@@ -301,11 +341,13 @@ async fn room(cx: &Cx) -> Result {
                     details: details,
                     selected_choice_id: None,
                     display_name_to_remember: None,
+                    creator_can_edit: creator_can_edit,
                 )) }
             } else if details.room.participant_names_public {
                 view! { document(title: title, participant_form(
                     details: details,
                     form: ParticipantForm::default(),
+                    creator_can_edit: creator_can_edit,
                 )) }
             } else {
                 view! { (StatusCode::INTERNAL_SERVER_ERROR) "internal server error" }

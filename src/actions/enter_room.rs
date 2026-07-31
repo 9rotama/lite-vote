@@ -74,6 +74,7 @@ async fn post_participant(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> 
                     display_name,
                     error: Some(display_name_error(&error)),
                 },
+                creator_can_edit: false,
             )) }?;
             (StatusCode::UNPROCESSABLE_ENTITY, body).into_response(cx)
         }
