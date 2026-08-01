@@ -1,6 +1,8 @@
-use crate::pages::room::room_not_found;
+use crate::pages::room::{results_region, room_not_found};
 use lite_vote::{
     participant_entry::PARTICIPANT_COOKIE_NAME,
+    participant_entry::load_room,
+    results::load_results,
     security::same_origin,
     voting::{VoteOutcome, cast_vote},
 };
@@ -39,7 +41,35 @@ async fn post_vote(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result<
     let slug = path_param::<Slug>(cx);
     let pool = app_context::<SqlitePool>(cx);
     match cast_vote(pool, slug, participant_cookie.value(), choice_id).await {
-        Ok(VoteOutcome::Recorded) => see_other(&format!("/rooms/{slug}")).into_response(cx),
+        Ok(VoteOutcome::Recorded) => {
+            let wants_results = request_context::<http::request::Parts>(cx)
+                .headers
+                .get("x-lite-vote-partial")
+                .is_some_and(|value| value == "results");
+            if !wants_results {
+                return see_other(&format!("/rooms/{slug}")).into_response(cx);
+            }
+            let Some(details) = load_room(pool, slug).await.map_err(topcoat::Error::from)? else {
+                let body = view! { room_not_found() }?;
+                return (StatusCode::NOT_FOUND, body).into_response(cx);
+            };
+            let results = load_results(
+                pool,
+                details.room.id,
+                details.room.is_closed(),
+                details.room.participant_names_public,
+            )
+            .await
+            .map_err(topcoat::Error::from)?;
+            let body = view! {
+                results_region(
+                    results: results,
+                    closed: details.room.is_closed(),
+                    participant_names_public: details.room.participant_names_public,
+                )
+            }?;
+            body.into_response(cx)
+        }
         Ok(VoteOutcome::Closed) => {
             (StatusCode::CONFLICT, "この投票は締め切られています。").into_response(cx)
         }
