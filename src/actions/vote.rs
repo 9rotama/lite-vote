@@ -2,6 +2,7 @@ use crate::pages::room::{results_region, room_not_found};
 use lite_vote::{
     participant_entry::PARTICIPANT_COOKIE_NAME,
     participant_entry::load_room,
+    realtime::RoomUpdateHub,
     results::load_results,
     security::same_origin,
     voting::{VoteOutcome, cast_vote},
@@ -42,6 +43,7 @@ async fn post_vote(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result<
     let pool = app_context::<SqlitePool>(cx);
     match cast_vote(pool, slug, participant_cookie.value(), choice_id).await {
         Ok(VoteOutcome::Recorded) => {
+            app_context::<RoomUpdateHub>(cx).notify(slug);
             let wants_results = request_context::<http::request::Parts>(cx)
                 .headers
                 .get("x-lite-vote-partial")

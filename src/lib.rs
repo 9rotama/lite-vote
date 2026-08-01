@@ -2,6 +2,7 @@ pub mod closing;
 pub mod db;
 pub mod models;
 pub mod participant_entry;
+pub mod realtime;
 pub mod results;
 pub mod room_creation;
 pub mod room_editing;

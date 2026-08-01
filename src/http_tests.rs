@@ -1,6 +1,8 @@
+use http_body_util::BodyExt;
 use lite_vote::{
     db::{DatabaseConfig, MIGRATOR, connect_pool},
     participant_entry::{EntryKind, EntryOutcome, create_participant, load_room},
+    realtime::RoomUpdateHub,
     room_creation::{CreateRoomInput, CreatedRoom, create_room},
     voting::cast_vote,
 };
@@ -12,6 +14,15 @@ use topcoat::{
     cookie::RouterBuilderCookieExt,
     router::{Body, Method, Router, RouterBuilderDiscoverExt, StatusCode, header, to_bytes},
 };
+
+async fn next_body_chunk(body: &mut Body) -> String {
+    let frame = tokio::time::timeout(Duration::from_secs(1), body.frame())
+        .await
+        .expect("SSE frame should arrive within one second")
+        .expect("SSE stream should remain open")
+        .expect("SSE frame should be readable");
+    String::from_utf8(frame.into_data().expect("expected a data frame").to_vec()).unwrap()
+}
 
 async fn app() -> (tempfile::TempDir, SqlitePool, Router) {
     let dir = tempdir().unwrap();
@@ -26,6 +37,7 @@ async fn app() -> (tempfile::TempDir, SqlitePool, Router) {
         .discover()
         .assets(AssetBundle::empty())
         .app_context(pool.clone())
+        .app_context(RoomUpdateHub::default())
         .cookies()
         .build();
     (dir, pool, router)
@@ -706,4 +718,118 @@ async fn close_route_requires_creator_and_same_origin() {
             .closed_at
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn room_event_stream_notifies_votes_and_closing() {
+    let (_dir, pool, router) = app().await;
+    let created = create_owned(&pool, "anonymous").await;
+    let room_path = format!("/rooms/{}", created.slug);
+
+    let (status, headers, body) = send(&router, Method::GET, &room_path, "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("new EventSource"));
+    assert!(body.contains("リアルタイム更新に接続中"));
+    let room_participant_cookie = participant_cookie(&headers);
+
+    let event_request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("{room_path}/events"))
+        .header(header::HOST, "vote.example")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.handle(event_request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/event-stream"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-cache, no-transform"
+    );
+    assert_eq!(response.headers().get("x-accel-buffering").unwrap(), "no");
+    let mut event_body = response.into_body();
+    assert_eq!(next_body_chunk(&mut event_body).await, ": connected\n\n");
+
+    let other = create_owned(&pool, "anonymous").await;
+    let other_room_path = format!("/rooms/{}", other.slug);
+    let (status, headers, _) = send(&router, Method::GET, &other_room_path, "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let other_participant_cookie = participant_cookie(&headers);
+    let other_choice_id = load_room(&pool, &other.slug)
+        .await
+        .unwrap()
+        .unwrap()
+        .choices[0]
+        .id;
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &format!("{other_room_path}/votes"),
+        &format!("choice_id={other_choice_id}"),
+        Some(&other_participant_cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), event_body.frame())
+            .await
+            .is_err(),
+        "another room's update must not be sent on this stream"
+    );
+
+    let choice_id = load_room(&pool, &created.slug)
+        .await
+        .unwrap()
+        .unwrap()
+        .choices[0]
+        .id;
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &format!("{room_path}/votes"),
+        &format!("choice_id={choice_id}"),
+        Some(&room_participant_cookie),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        next_body_chunk(&mut event_body).await,
+        "event: update\ndata: changed\n\n"
+    );
+
+    let (status, _, _) = send(
+        &router,
+        Method::POST,
+        &format!("{room_path}/close"),
+        "",
+        Some(&creator_cookie(&created.creator_token)),
+        Some("https://vote.example"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        next_body_chunk(&mut event_body).await,
+        "event: update\ndata: changed\n\n"
+    );
+}
+
+#[tokio::test]
+async fn event_stream_returns_not_found_for_unknown_room() {
+    let (_dir, _pool, router) = app().await;
+    let (status, _, body) = send(
+        &router,
+        Method::GET,
+        "/rooms/not-found/events",
+        "",
+        None,
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body, "room not found");
 }

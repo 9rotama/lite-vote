@@ -194,10 +194,13 @@ async fn voting_room(
 ) -> Result {
     let closed = details.room.is_closed();
     let action = format!("/rooms/{}/votes", details.room.slug);
+    let events_url = format!("/rooms/{}/events", details.room.slug);
+    let results_url = format!("/rooms/{}/results", details.room.slug);
     view! {
-        <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
+        <main id="voting-room" class="mx-auto min-h-screen max-w-2xl px-6 py-12"
+            data-events-url=(events_url) data-results-url=(results_url)>
             <h1 class="text-3xl font-semibold">(details.room.question)</h1>
-            <p class="mt-2 text-muted-foreground">
+            <p id="room-state" class="mt-2 text-muted-foreground">
                 if closed {
                     "この投票は締め切られています。"
                 } else if details.room.participant_names_public {
@@ -286,6 +289,10 @@ fetch(form.action, {
             }
             <p id="results-update-status" class="sr-only" role="status"
                 aria-live="polite" aria-atomic="true"></p>
+            <p id="realtime-connection-status" class="mt-6 text-sm text-muted-foreground"
+                role="status" aria-live="polite">
+                "リアルタイム更新に接続中…"
+            </p>
             results_region(
                 results: results,
                 closed: closed,
@@ -294,6 +301,89 @@ fetch(form.action, {
             if is_creator && !closed {
                 close_room_form(slug: details.room.slug.clone())
             }
+            <script>(Unescaped::new_unchecked(r#"(() => {
+const room = document.getElementById('voting-room');
+if (!room || !window.EventSource) return;
+const connectionStatus = document.getElementById('realtime-connection-status');
+let source = null;
+let resultsRequest = null;
+let hasConnected = false;
+
+function setConnectionStatus(message) {
+  if (connectionStatus) connectionStatus.textContent = message;
+}
+
+async function refreshResults() {
+  if (resultsRequest) resultsRequest.abort();
+  resultsRequest = new AbortController();
+  try {
+    const response = await fetch(room.dataset.resultsUrl, {
+      headers: {'X-Lite-Vote-Partial': 'results'},
+      cache: 'no-store',
+      signal: resultsRequest.signal
+    });
+    if (!response.ok) throw new Error('最新の結果を取得できませんでした。');
+    const template = document.createElement('template');
+    template.innerHTML = (await response.text()).trim();
+    const nextResults = template.content.firstElementChild;
+    const currentResults = document.getElementById('room-results');
+    if (!nextResults || nextResults.id !== 'room-results' || !currentResults) {
+      throw new Error('最新の結果を表示できませんでした。');
+    }
+    currentResults.replaceWith(nextResults);
+    const status = document.getElementById('results-update-status');
+    if (status) {
+      status.textContent = '結果を更新しました。合計 ' +
+        nextResults.dataset.totalVotes + '票です。';
+    }
+    if (nextResults.dataset.closed === 'true') {
+      const state = document.getElementById('room-state');
+      if (state) state.textContent = 'この投票は締め切られています。';
+      const voteForm = document.querySelector('form[action$="/votes"]');
+      if (voteForm) voteForm.remove();
+      const closeForm = document.querySelector('form[action$="/close"]');
+      if (closeForm) closeForm.remove();
+    }
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      setConnectionStatus('結果を同期できません。再接続を待っています…');
+    }
+  }
+}
+
+function connect() {
+  if (source && source.readyState !== EventSource.CLOSED) return;
+  setConnectionStatus(hasConnected
+    ? 'リアルタイム更新に再接続中…'
+    : 'リアルタイム更新に接続中…');
+  source = new EventSource(room.dataset.eventsUrl);
+  source.onopen = () => {
+    hasConnected = true;
+    setConnectionStatus('リアルタイム更新に接続しました。');
+    refreshResults();
+  };
+  source.addEventListener('update', refreshResults);
+  source.onerror = () => {
+    setConnectionStatus('リアルタイム更新に再接続中…');
+  };
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    connect();
+    refreshResults();
+  }
+});
+window.addEventListener('pagehide', () => {
+  if (source) source.close();
+  if (resultsRequest) resultsRequest.abort();
+});
+window.addEventListener('pageshow', () => {
+  connect();
+  refreshResults();
+});
+connect();
+})()"#))</script>
             if let Some(display_name) = display_name_to_remember {
                 <script>(Unescaped::new_unchecked(format!(
                     "try {{ localStorage.setItem('lite_vote_last_display_name', {}); }} catch (_) {{}}",
@@ -312,7 +402,8 @@ pub(crate) async fn results_region(
 ) -> Result {
     view! {
         <section id="room-results" class="mt-10"
-            data-total-votes=(results.total_votes.to_string())>
+            data-total-votes=(results.total_votes.to_string())
+            data-closed=(closed.to_string())>
             <h2 class="text-xl font-semibold">
                 if closed {
                     "確定結果"
