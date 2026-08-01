@@ -88,8 +88,8 @@ pub(crate) async fn participant_form(
 ) -> Result {
     let action = format!("/rooms/{}/participants", details.room.slug);
     view! {
-        <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
-            <h1 class="text-3xl font-semibold">(details.room.question)</h1>
+        <main class="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+            <h1 class="break-words text-2xl font-semibold sm:text-3xl">(details.room.question)</h1>
             <p class="mt-2 text-muted-foreground">"表示名を入力して投票部屋へ入ってください。"</p>
             if creator_can_edit {
                 <a href=(format!("/rooms/{}/edit", details.room.slug))
@@ -171,12 +171,15 @@ async fn close_room_form(slug: String) -> Result {
     view! {
         <form action=(format!("/rooms/{slug}/close"))
             method="post" class="mt-10 border-t pt-6">
-            <p class="mb-3 text-sm text-muted-foreground">
+            <p id="close-room-warning" class="mb-3 text-sm text-muted-foreground">
                 "締切後は投票を再開できません。"
             </p>
             button(
                 variant: ButtonVariant::Destructive,
-                attrs: attributes! { type="submit" },
+                attrs: attributes! {
+                    type="submit"
+                    aria-describedby="close-room-warning"
+                },
                 "投票を締め切る"
             )
         </form>
@@ -197,9 +200,9 @@ async fn voting_room(
     let events_url = format!("/rooms/{}/events", details.room.slug);
     let results_url = format!("/rooms/{}/results", details.room.slug);
     view! {
-        <main id="voting-room" class="mx-auto min-h-screen max-w-2xl px-6 py-12"
+        <main id="voting-room" class="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6 sm:py-12"
             data-events-url=(events_url) data-results-url=(results_url)>
-            <h1 class="text-3xl font-semibold">(details.room.question)</h1>
+            <h1 class="break-words text-2xl font-semibold sm:text-3xl">(details.room.question)</h1>
             <p id="room-state" class="mt-2 text-muted-foreground">
                 if closed {
                     "この投票は締め切られています。"
@@ -264,14 +267,21 @@ fetch(form.action, {
                         <legend class="text-lg font-medium">"投票先を一つ選んでください"</legend>
                         <div class="mt-4 space-y-3">
                             for choice in &details.choices {
-                                <label class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
-                                    has-[:checked]:border-primary has-[:checked]:bg-muted
-                                    focus-within:ring-2 focus-within:ring-ring">
+                                <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-4
+                                    has-[:checked]:border-primary has-[:checked]:bg-foreground/5
+                                    focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2
+                                    focus-within:ring-offset-background">
                                     <input type="radio" name="choice_id" value=(choice.id.to_string())
                                         checked=(selected_choice_id == Some(choice.id))
                                         required=(true)
-                                        class="size-4">
-                                    <span>(choice.text.clone())</span>
+                                        class="peer mt-0.5 size-4 shrink-0">
+                                    <span class="min-w-0 flex-1 break-words">
+                                        (choice.text.clone())
+                                    </span>
+                                    <span aria-hidden="true"
+                                        class="hidden shrink-0 font-semibold peer-checked:inline">
+                                        "選択中"
+                                    </span>
                                 </label>
                             }
                         </div>
@@ -424,8 +434,8 @@ pub(crate) async fn results_region(
                     } else {
                         "rounded-lg border p-4"
                     })>
-                        <div class="flex items-start justify-between gap-4">
-                            <span class="font-medium">(result.text)</span>
+                        <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                            <span class="break-words font-medium">(result.text)</span>
                             <span class="shrink-0">
                                 (format!(
                                     "{}票（{}.{:01}%）",
@@ -472,8 +482,8 @@ fn javascript_string(value: &str) -> String {
 pub(crate) async fn room_not_found() -> Result {
     view! {
         document(title: "投票部屋が見つかりません - Lite Vote".to_string(), {
-            <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
-                <h1 class="text-3xl font-semibold">"投票部屋が見つかりません"</h1>
+            <main class="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+                <h1 class="text-2xl font-semibold sm:text-3xl">"投票部屋が見つかりません"</h1>
                 <p class="mt-2 text-muted-foreground">
                     "参加用URLを確認してください。"
                 </p>

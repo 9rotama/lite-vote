@@ -126,7 +126,13 @@ async fn creator_can_open_and_submit_the_room_edit_form() {
     let (_dir, pool, router) = app().await;
     let created = create_owned(&pool, "anonymous").await;
     let cookie = creator_cookie(&created.creator_token);
+    let room_path = format!("/rooms/{}", created.slug);
     let edit_path = format!("/rooms/{}/edit", created.slug);
+
+    let (status, _, body) = send(&router, Method::GET, &room_path, "", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("締切後は投票を再開できません"));
+    assert!(body.contains("aria-describedby=\"close-room-warning\""));
 
     let (status, _, body) = send(&router, Method::GET, &edit_path, "", Some(&cookie), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -225,6 +231,8 @@ async fn public_room_requires_a_valid_display_name_before_showing_choices() {
     assert!(headers.get_all(header::SET_COOKIE).iter().next().is_none());
     assert!(body.contains("次は？"));
     assert!(body.contains("name=\"display_name\""));
+    assert!(body.contains("for=\"display-name\""));
+    assert!(body.contains("aria-describedby=\"display-name-help display-name-error\""));
     assert!(body.contains("締切後の結果にも残ります"));
     assert!(!body.contains("id=\"room-choices\""));
 
@@ -404,6 +412,8 @@ async fn vote_route_uses_radios_and_updates_the_existing_participant_vote() {
     assert_eq!(body.matches("type=\"radio\"").count(), 2);
     assert_eq!(body.matches("name=\"choice_id\"").count(), 2);
     assert!(body.contains("投票先を一つ選んでください"));
+    assert_eq!(body.matches(">選択中</span>").count(), 2);
+    assert!(body.contains("peer-checked:inline"));
     let cookie = participant_cookie(&headers);
     let vote_path = format!("{room_path}/votes");
 

@@ -84,8 +84,8 @@ pub(crate) async fn edit_room_form(slug: String, form: EditRoomForm) -> Result {
     choices.resize(10, String::new());
     view! {
         signal choice_count = initial_choice_count;
-        <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
-            <h1 class="text-3xl font-semibold">"投票部屋を編集"</h1>
+        <main class="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+            <h1 class="text-2xl font-semibold sm:text-3xl">"投票部屋を編集"</h1>
             <p class="mt-2 text-muted-foreground">
                 "質問と選択肢は、最初の一票が入るまで編集できます。"
             </p>
@@ -165,7 +165,7 @@ if (first !== null) {
                         for (index, choice) in choices.iter().enumerate() {
                             let row_number = (index + 1) as f64;
                             let choice_error = form.choice_errors.get(index).and_then(Option::as_ref);
-                            <div class="choice-row flex items-start gap-2"
+                            <div class="choice-row flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
                                 :hidden=$(choice_count.get() < row_number)>
                                 <div class="min-w-0 flex-1">
                                     label(
@@ -221,7 +221,7 @@ if (first !== null) {
                         "2〜10個、各1〜100文字。同じ選択肢は使えません。"
                     </p>
                 </fieldset>
-                <div class="flex gap-3">
+                <div class="flex flex-wrap items-center gap-3">
                     button(attrs: attributes! { type="submit" }, "変更を保存")
                     <a href=(format!("/rooms/{slug}")) class="self-center underline">
                         "キャンセル"
@@ -249,8 +249,8 @@ async fn room_edit(cx: &Cx) -> Result {
         return view! {
             (StatusCode::CONFLICT)
             document(title: "編集できません - Lite Vote".to_string(), {
-                <main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
-                    <h1 class="text-3xl font-semibold">"投票部屋を編集できません"</h1>
+                <main class="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+                    <h1 class="text-2xl font-semibold sm:text-3xl">"投票部屋を編集できません"</h1>
                     <p class="mt-2">"締切済み、または最初の一票が入ったため編集できません。"</p>
                     <a href=(format!("/rooms/{slug}")) class="mt-6 inline-block underline">
                         "投票部屋へ戻る"
