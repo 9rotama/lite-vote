@@ -12,6 +12,7 @@ use lite_vote::{
         EntryKind, EntryOutcome, PARTICIPANT_COOKIE_MAX_AGE_SECONDS, PARTICIPANT_COOKIE_NAME,
         RoomDetails, create_participant, find_participant_by_token, load_room,
     },
+    results::{RoomResults, load_results},
     room_creation::{CREATOR_COOKIE_MAX_AGE_SECONDS, CREATOR_COOKIE_NAME},
     room_editing::room_has_votes,
     security::hash_token,
@@ -83,6 +84,7 @@ pub(crate) async fn participant_form(
     details: RoomDetails,
     form: ParticipantForm,
     creator_can_edit: bool,
+    is_creator: bool,
 ) -> Result {
     let action = format!("/rooms/{}/participants", details.room.slug);
     view! {
@@ -150,6 +152,9 @@ if (message) {
                 </div>
                 button(attrs: attributes! { type="submit" }, "投票部屋へ入る")
             </form>
+            if is_creator {
+                close_room_form(slug: details.room.slug.clone())
+            }
             <script>(Unescaped::new_unchecked(r#"try {
   const input = document.getElementById('display-name');
   if (input.value === '') {
@@ -162,10 +167,29 @@ if (message) {
 }
 
 #[component]
+async fn close_room_form(slug: String) -> Result {
+    view! {
+        <form action=(format!("/rooms/{slug}/close"))
+            method="post" class="mt-10 border-t pt-6">
+            <p class="mb-3 text-sm text-muted-foreground">
+                "締切後は投票を再開できません。"
+            </p>
+            button(
+                variant: ButtonVariant::Destructive,
+                attrs: attributes! { type="submit" },
+                "投票を締め切る"
+            )
+        </form>
+    }
+}
+
+#[component]
 async fn voting_room(
     details: RoomDetails,
+    results: RoomResults,
     selected_choice_id: Option<i64>,
     display_name_to_remember: Option<String>,
+    is_creator: bool,
     creator_can_edit: bool,
 ) -> Result {
     let closed = details.room.is_closed();
@@ -191,24 +215,24 @@ async fn voting_room(
                     "質問と選択肢を編集"
                 </a>
             }
-            <form action=(action) method="post" class="mt-8">
-                <fieldset id="room-choices" disabled=(closed)>
-                    <legend class="text-lg font-medium">"投票先を一つ選んでください"</legend>
-                    <div class="mt-4 space-y-3">
-                        for choice in details.choices {
-                            <label class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
-                                has-[:checked]:border-primary has-[:checked]:bg-muted
-                                focus-within:ring-2 focus-within:ring-ring">
-                                <input type="radio" name="choice_id" value=(choice.id.to_string())
-                                    checked=(selected_choice_id == Some(choice.id))
-                                    required=(true)
-                                    class="size-4">
-                                <span>(choice.text)</span>
-                            </label>
-                        }
-                    </div>
-                </fieldset>
-                if !closed {
+            if !closed {
+                <form action=(action) method="post" class="mt-8">
+                    <fieldset id="room-choices">
+                        <legend class="text-lg font-medium">"投票先を一つ選んでください"</legend>
+                        <div class="mt-4 space-y-3">
+                            for choice in &details.choices {
+                                <label class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
+                                    has-[:checked]:border-primary has-[:checked]:bg-muted
+                                    focus-within:ring-2 focus-within:ring-ring">
+                                    <input type="radio" name="choice_id" value=(choice.id.to_string())
+                                        checked=(selected_choice_id == Some(choice.id))
+                                        required=(true)
+                                        class="size-4">
+                                    <span>(choice.text.clone())</span>
+                                </label>
+                            }
+                        </div>
+                    </fieldset>
                     button(attrs: attributes! { type="submit" class="mt-6" },
                         if selected_choice_id.is_some() {
                             "投票先を変更する"
@@ -216,8 +240,55 @@ async fn voting_room(
                             "投票する"
                         }
                     )
+                </form>
+            }
+            <section id="room-results" class="mt-10" aria-live="polite" aria-atomic="true">
+                <h2 class="text-xl font-semibold">
+                    if closed {
+                        "確定結果"
+                    } else {
+                        "現在の結果"
+                    }
+                </h2>
+                <p class="mt-1 text-sm text-muted-foreground">
+                    (format!("合計 {}票", results.total_votes))
+                </p>
+                if closed && results.total_votes == 0 {
+                    <p class="mt-4 rounded-lg border p-4 font-medium">"勝者なし"</p>
                 }
-            </form>
+                <ol class="mt-4 space-y-3">
+                    for result in results.choices {
+                        <li class=(if result.is_winner {
+                            "rounded-lg border-2 border-primary bg-muted p-4"
+                        } else {
+                            "rounded-lg border p-4"
+                        })>
+                            <div class="flex items-start justify-between gap-4">
+                                <span class="font-medium">(result.text)</span>
+                                <span class="shrink-0">
+                                    (format!(
+                                        "{}票（{}.{:01}%）",
+                                        result.vote_count,
+                                        result.percentage_tenths / 10,
+                                        result.percentage_tenths % 10
+                                    ))
+                                </span>
+                            </div>
+                            if result.is_winner {
+                                <p class="mt-2 text-sm font-semibold">"最多得票"</p>
+                            }
+                            if details.room.participant_names_public && !result.voter_names.is_empty() {
+                                <p class="mt-2 text-sm text-muted-foreground">
+                                    (format!("投票者: {}", result.voter_names.join("、")))
+                                </p>
+                            }
+                        </li>
+                    }
+                </ol>
+            </section>
+            if is_creator && !closed {
+                close_room_form(slug: details.room.slug.clone())
+            }
             if let Some(display_name) = display_name_to_remember {
                 <script>(Unescaped::new_unchecked(format!(
                     "try {{ localStorage.setItem('lite_vote_last_display_name', {}); }} catch (_) {{}}",
@@ -283,6 +354,14 @@ async fn room(cx: &Cx) -> Result {
     } else {
         None
     };
+    let results = load_results(
+        pool,
+        details.room.id,
+        details.room.is_closed(),
+        details.room.participant_names_public,
+    )
+    .await
+    .map_err(topcoat::Error::from)?;
     if let Some((participant, token)) = existing {
         set_participant_cookie(cx, slug, &token);
         let selected_choice_id = find_vote(pool, details.room.id, participant.id)
@@ -297,8 +376,10 @@ async fn room(cx: &Cx) -> Result {
         let title = format!("{} - Lite Vote", details.room.question);
         return view! { document(title: title, voting_room(
             details: details,
+            results: results,
             selected_choice_id: selected_choice_id,
             display_name_to_remember: remember,
+            is_creator: is_creator,
             creator_can_edit: creator_can_edit,
         )) };
     }
@@ -306,8 +387,10 @@ async fn room(cx: &Cx) -> Result {
         let title = format!("{} - Lite Vote", details.room.question);
         return view! { document(title: title, voting_room(
             details: details,
+            results: results,
             selected_choice_id: None,
             display_name_to_remember: None,
+            is_creator: is_creator,
             creator_can_edit: creator_can_edit,
         )) };
     }
@@ -317,6 +400,7 @@ async fn room(cx: &Cx) -> Result {
             details: details,
             form: ParticipantForm::default(),
             creator_can_edit: creator_can_edit,
+            is_creator: is_creator,
         )) };
     }
 
@@ -326,8 +410,10 @@ async fn room(cx: &Cx) -> Result {
             let title = format!("{} - Lite Vote", details.room.question);
             view! { document(title: title, voting_room(
                 details: details,
+                results: results,
                 selected_choice_id: None,
                 display_name_to_remember: None,
+                is_creator: is_creator,
                 creator_can_edit: creator_can_edit,
             )) }
         }
@@ -337,10 +423,20 @@ async fn room(cx: &Cx) -> Result {
             };
             let title = format!("{} - Lite Vote", details.room.question);
             if details.room.is_closed() {
+                let results = load_results(
+                    pool,
+                    details.room.id,
+                    true,
+                    details.room.participant_names_public,
+                )
+                .await
+                .map_err(topcoat::Error::from)?;
                 view! { document(title: title, voting_room(
                     details: details,
+                    results: results,
                     selected_choice_id: None,
                     display_name_to_remember: None,
+                    is_creator: is_creator,
                     creator_can_edit: creator_can_edit,
                 )) }
             } else if details.room.participant_names_public {
@@ -348,6 +444,7 @@ async fn room(cx: &Cx) -> Result {
                     details: details,
                     form: ParticipantForm::default(),
                     creator_can_edit: creator_can_edit,
+                    is_creator: is_creator,
                 )) }
             } else {
                 view! { (StatusCode::INTERNAL_SERVER_ERROR) "internal server error" }
