@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000';
+const usesLocalHttp = baseURL.startsWith('http://');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -17,7 +18,7 @@ export default defineConfig({
     : {
         command: 'just e2e-server',
         url: `${baseURL}/readyz`,
-        reuseExistingServer: true,
+        reuseExistingServer: false,
         timeout: 120_000,
       },
   projects: [
@@ -31,6 +32,10 @@ export default defineConfig({
     },
     {
       name: 'webkit',
+      // WebKit does not retain Secure cookies from the local HTTP test server.
+      // Run the authenticated flows against Chromium/Firefox locally; setting
+      // an HTTPS base URL also enables the primary flows for WebKit.
+      testMatch: usesLocalHttp ? /smoke\.spec\.ts/ : undefined,
       use: { ...devices['Desktop Safari'] },
     },
   ],
