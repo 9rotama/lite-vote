@@ -5,6 +5,7 @@ mod pages;
 use anyhow::{Context, Result};
 use lite_vote::{
     db::{DatabaseConfig, connect},
+    observability::{Environment, init_logging},
     realtime::RoomUpdateHub,
 };
 use topcoat::{
@@ -15,6 +16,16 @@ use topcoat::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let environment = Environment::from_env()?;
+    init_logging(environment)?;
+    if let Err(error) = run().await {
+        tracing::error!(error = %error, "application failed");
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn run() -> Result<()> {
     let database = connect(DatabaseConfig::from_env()?)
         .await
         .context("database startup check failed")?;
