@@ -1,6 +1,7 @@
 pub mod closing;
 pub mod db;
 pub mod models;
+pub mod observability;
 pub mod participant_entry;
 pub mod realtime;
 pub mod results;

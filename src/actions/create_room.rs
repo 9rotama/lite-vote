@@ -46,6 +46,7 @@ async fn post_rooms(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result
     match create_room(app_context::<SqlitePool>(cx), &input).await {
         Ok(created) => {
             let path = format!("/rooms/{}", created.slug);
+            tracing::info!(room_slug = %created.slug, "room created");
             cookies(cx).add(
                 Cookie::build((CREATOR_COOKIE_NAME, created.creator_token))
                     .path(path.clone())
@@ -66,7 +67,10 @@ async fn post_rooms(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result
             ) }?;
             (StatusCode::UNPROCESSABLE_ENTITY, body).into_response(cx)
         }
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx),
+        Err(error) => {
+            tracing::error!(error = %error, "room creation failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx)
+        }
     }
 }
 

@@ -122,6 +122,42 @@ fn creator_cookie(token: &str) -> String {
 }
 
 #[tokio::test]
+async fn health_and_readiness_endpoints_report_process_and_database_state() {
+    let (_dir, pool, router) = app().await;
+
+    let (status, _, body) = send(&router, Method::GET, "/healthz", "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "ok");
+
+    let (status, _, body) = send(&router, Method::GET, "/readyz", "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "ready");
+
+    pool.close().await;
+    let (status, _, body) = send(&router, Method::GET, "/healthz", "", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "ok");
+    let (status, _, body) = send(&router, Method::GET, "/readyz", "", None, None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body, "not ready");
+}
+
+#[tokio::test]
+async fn readiness_rejects_an_incomplete_migration_set() {
+    let (_dir, pool, router) = app().await;
+    sqlx::query(
+        "DELETE FROM _sqlx_migrations WHERE version = (SELECT MAX(version) FROM _sqlx_migrations)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, _, body) = send(&router, Method::GET, "/readyz", "", None, None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body, "not ready");
+}
+
+#[tokio::test]
 async fn creator_can_open_and_submit_the_room_edit_form() {
     let (_dir, pool, router) = app().await;
     let created = create_owned(&pool, "anonymous").await;

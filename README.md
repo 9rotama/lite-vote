@@ -54,6 +54,11 @@ DBは既定で `var/lite-vote.sqlite3` に保存されます。パスは
 `just db-migrate`と`just dev`のmigrationおよびアプリケーションが同じDBを使用し、
 指定先の親ディレクトリも自動で作成されます。
 
+ログは標準出力へ出力されます。`LITE_VOTE_ENV=local`（既定）では読みやすい
+テキスト形式、`LITE_VOTE_ENV=production`ではJSON形式になります。ログレベルは
+`RUST_LOG`で変更できます。稼働確認には`GET /healthz`、SQLite接続とmigrationの
+適用確認には`GET /readyz`を使用できます。
+
 新しいマイグレーションは次のコマンドで作成します。
 
 ```sh

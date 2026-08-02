@@ -3,5 +3,7 @@ mod create_room;
 mod edit_room;
 mod enter_room;
 mod events;
+mod health;
+mod request_log;
 mod results;
 mod vote;

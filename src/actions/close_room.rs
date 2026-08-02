@@ -28,6 +28,7 @@ async fn post_close_room(cx: &Cx) -> Result<Response> {
     let slug = path_param::<Slug>(cx);
     match close_room(app_context::<SqlitePool>(cx), slug, cookie.value()).await {
         Ok(CloseRoomOutcome::Closed) => {
+            tracing::info!(room_slug = %slug, "room closed");
             app_context::<RoomUpdateHub>(cx).notify(slug);
             see_other(&format!("/rooms/{slug}")).into_response(cx)
         }
@@ -38,6 +39,9 @@ async fn post_close_room(cx: &Cx) -> Result<Response> {
         Ok(CloseRoomOutcome::Forbidden) => {
             (StatusCode::FORBIDDEN, "invalid creator cookie").into_response(cx)
         }
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx),
+        Err(error) => {
+            tracing::error!(room_slug = %slug, error = %error, "room closing failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx)
+        }
     }
 }

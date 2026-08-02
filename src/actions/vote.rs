@@ -43,6 +43,7 @@ async fn post_vote(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result<
     let pool = app_context::<SqlitePool>(cx);
     match cast_vote(pool, slug, participant_cookie.value(), choice_id).await {
         Ok(VoteOutcome::Recorded) => {
+            tracing::info!(room_slug = %slug, "vote recorded");
             app_context::<RoomUpdateHub>(cx).notify(slug);
             let wants_results = request_context::<http::request::Parts>(cx)
                 .headers
@@ -85,6 +86,9 @@ async fn post_vote(cx: &Cx, Form(pairs): Form<Vec<(String, String)>>) -> Result<
         Ok(VoteOutcome::ChoiceNotFound) => {
             (StatusCode::UNPROCESSABLE_ENTITY, "投票先が見つかりません。").into_response(cx)
         }
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx),
+        Err(error) => {
+            tracing::error!(room_slug = %slug, error = %error, "vote failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response(cx)
+        }
     }
 }
