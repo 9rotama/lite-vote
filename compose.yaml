@@ -1,0 +1,31 @@
+services:
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: sqlite:///data/lite-vote.sqlite3
+    volumes:
+      - lite-vote-data:/data
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runtime
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      LITE_VOTE_ENV: production
+      LITE_VOTE_DATABASE_PATH: /data/lite-vote.sqlite3
+    ports:
+      - "${LITE_VOTE_PORT:-3000}:3000"
+    volumes:
+      - lite-vote-data:/data
+    restart: unless-stopped
+
+volumes:
+  lite-vote-data:

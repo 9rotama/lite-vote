@@ -1,0 +1,11 @@
+{
+  "name": "lite-vote-e2e",
+  "private": true,
+  "scripts": {
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:all": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

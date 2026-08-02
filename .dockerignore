@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+node_modules
+playwright-report
+test-results
+target
+var
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
