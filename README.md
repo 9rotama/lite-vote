@@ -143,18 +143,25 @@ curl --fail http://127.0.0.1:3000/
 just e2e-install
 ```
 
-通常の確認ではChromiumでsmoke testを実行します。PlaywrightがmigrationとRust
-アプリケーションを自動起動し、終了後に停止します。
+通常の確認ではChromiumでsmoke testと主要な投票フローを実行します。Playwrightが
+実行ごとの一時SQLiteデータベースへmigrationを適用してRustアプリケーションを
+自動起動し、終了後に停止します。各シナリオは一意な部屋と独立したブラウザ
+コンテキストを使うため、テスト同士で投票やCookieを共有しません。
 
 ```sh
 just e2e
 ```
 
-節目では3ブラウザすべてで同じテストを実行します。
+節目ではChromiumとFirefoxで主要フローを、WebKitでsmoke testを実行します。
 
 ```sh
 just e2e-all
 ```
+
+ローカルサーバーはHTTPで起動します。WebKitはHTTPレスポンスの`Secure` Cookieを保持
+しないため、Cookieが必要な主要フローはローカルでは対象外とし、smoke testで起動を
+確認します。WebKitの主要フローはHTTPSで公開した環境を`PLAYWRIGHT_BASE_URL`へ指定
+すると実行できます。
 
 既に起動しているサーバーを対象にする場合は、`PLAYWRIGHT_BASE_URL`を指定すると
 Playwrightによるサーバー起動を省略できます。
@@ -163,8 +170,9 @@ Playwrightによるサーバー起動を省略できます。
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 just e2e
 ```
 
-現在のPlaywrightテストは環境の起動を検証するsmoke scaffoldのみです。公開部屋、
-匿名部屋、複数ブラウザコンテキストを使うSSEの主要シナリオは後続Issueで追加します。
+主要フローでは公開部屋と匿名部屋の投票・投票先変更・締切に加え、独立した二つの
+ブラウザコンテキスト間のSSE同期と、切断・再接続後の最新結果への同期を検証します。
+これらのE2Eテストはローカル確認用で、GitHub Actionsでは実行しません。
 
 ## Topcoat UI
 

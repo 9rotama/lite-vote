@@ -16,18 +16,18 @@ dev: db-migrate
 
 # Start the application server used by Playwright
 e2e-server:
-    LITE_VOTE_DATABASE_PATH="var/e2e.sqlite3" just dev
+    LITE_VOTE_DATABASE_PATH="$(mktemp -d)/lite-vote.sqlite3" just dev
 
 # Install Playwright's test dependency and three browser engines
 e2e-install:
     npm ci
     npx playwright install chromium firefox webkit
 
-# Run the smoke test in Chromium
+# Run the smoke test and primary voting flows in Chromium
 e2e:
     npm run test:e2e
 
-# Run the smoke test in Chromium, Firefox, and WebKit
+# Run primary flows in Chromium/Firefox and smoke in local HTTP WebKit
 e2e-all:
     npm run test:e2e:all
 
